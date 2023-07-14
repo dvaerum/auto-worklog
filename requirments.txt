@@ -1,0 +1,5 @@
+dbus-python
+
+# https://github.com/auhau/toggl-cli
+togglCli
+
