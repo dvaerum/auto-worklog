@@ -106,6 +106,17 @@ class _Notifications:
         }
         notify_timeout = timeout
 
+        print(f"{pendulum.today().to_datetime_string()} [=] Notification - send_notification - "
+            f"notify_app_name: {notify_app_name} - "
+            f"notify_replace_id: {notify_replace_id} - "
+            f"notify_app_icon: {notify_app_icon} - "
+            f"notify_summary: {notify_summary} - "
+            f"notify_body: {notify_body} - "
+            f"actions: {actions} - "
+            f"notify_hints: {notify_hints} - "
+            f"notify_timeout: {notify_timeout}"
+        )
+
         collect_all_msg_ids = set()
 
         if actions is None:

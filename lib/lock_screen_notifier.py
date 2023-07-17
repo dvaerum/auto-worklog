@@ -46,13 +46,24 @@ class _LockScreenNotifier:
 
     def signal_handler(self, screen_locked: Union[int, ScreenState]):
         screen_state = ScreenState(screen_locked)
+        print('{} [=] Lock Screen Notifier - {}'.format(pendulum.now().to_datetime_string(), screen_state.name))
 
         if screen_state == ScreenState.UNLOCKED:
             for func_ in self._unlock_subscription:
+                print('{} [=] Lock Screen Notifier - {} - Run: {}'.format(
+                    pendulum.now().to_datetime_string(),
+                    screen_state.name,
+                    func_,
+                ))
                 func_()
 
         elif screen_state == ScreenState.LOCKED:
             for func_ in self._lock_subscription:
+                print('{} [=] Lock Screen Notifier - {} - Run: {}'.format(
+                    pendulum.now().to_datetime_string(),
+                    screen_state.name,
+                    func_,
+                ))
                 func_()
 
         else:

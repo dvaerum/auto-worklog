@@ -61,6 +61,8 @@ def main():
         print('{} [=] Main - Ready 😁'.format(pendulum.now().to_datetime_string()))
         lock_screen_notifier.run()
 
+    tracker.save()
+
 
 if __name__ == "__main__":
     main()
