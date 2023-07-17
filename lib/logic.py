@@ -28,7 +28,7 @@ def _if_yes_then_start_toggl(msg_id: int, action_id: int) -> None:
         toggl_handler = TogglHandler()
         toggl_handler.start_entry(
             description="Working",
-            start_time=entry.datetime.subtract(minutes=5),
+            start_time=entry.datetime,
         )
 
 
@@ -57,7 +57,7 @@ def first_unlock_today() -> None:
             Notifications().send_notification(
                 title='Not logging time',
                 message=f'You are not currently logging time, do you want to?',
-                actions=["X", "Yes"],
+                actions=["Yes"],
                 action_callback_function=_if_yes_then_start_toggl,
                 timeout=60 * 1000,
             )
@@ -71,7 +71,7 @@ def first_unlock_today() -> None:
                 title='First unlock of the day',
                 message=f'You forgot to stop Toggl yesterday, do you want to stop it now?',
                 icon_path="/usr/share/icons/breeze/apps/48/ktimetracker.svg",
-                actions=["X", "Yes"],
+                actions=["Yes"],
                 action_callback_function=_if_yes_then_stop_toggl,
                 timeout=60 * 1000,
             )
@@ -81,7 +81,7 @@ def first_unlock_today() -> None:
             Notifications().send_notification(
                 title='First unlock of the day',
                 message=f'Do you want to start Toggl',
-                actions=["X", "Yes"],
+                actions=["Yes"],
                 action_callback_function=_if_yes_then_start_toggl_for_the_1st_time_today,
                 timeout=60 * 1000,
             )

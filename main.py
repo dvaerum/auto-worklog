@@ -46,13 +46,13 @@ def main():
     tracker = Tracker()
 
     lock_screen_notifier = LockScreenNotifier()
-    lock_screen_notifier.subscribe_to_lock_notification(screen_locked)
     lock_screen_notifier.subscribe_to_lock_notification(tracker.trigger_screen_locked)
-    lock_screen_notifier.subscribe_to_unlock_notification(screen_unlocked)
-    lock_screen_notifier.subscribe_to_unlock_notification(tracker.trigger_screen_unlocked)
+    lock_screen_notifier.subscribe_to_lock_notification(screen_locked)
 
-    lock_screen_notifier.subscribe_to_lock_notification(first_unlock_today)
-    lock_screen_notifier.subscribe_to_lock_notification(check_for_lunch_break_when_unlocking)
+    lock_screen_notifier.subscribe_to_unlock_notification(tracker.trigger_screen_unlocked)
+    lock_screen_notifier.subscribe_to_unlock_notification(screen_unlocked)
+    lock_screen_notifier.subscribe_to_unlock_notification(first_unlock_today)
+    lock_screen_notifier.subscribe_to_unlock_notification(check_for_lunch_break_when_unlocking)
 
     first_unlock_today()
     check_for_lunch_break_when_unlocking()
