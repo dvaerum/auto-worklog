@@ -49,13 +49,14 @@ class _TogglHandler:
         return self._current_entry
 
     def get_entries_started_today(self) -> List[api.TimeEntry]:
-        today = pendulum.today().date()
+        today = pendulum.today()
 
         if self.get_token() is None:
-            return [
+            entries = [
                 entry for entry in self._entries
                 if entry.start.date() == today
             ]
+            return entries
 
         self._entries = api.TimeEntry.objects.filter(start=today)
         return self._entries

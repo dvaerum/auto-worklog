@@ -50,7 +50,8 @@ def first_unlock_today() -> None:
     tracker = Tracker()
     toggl_handler = TogglHandler()
 
-    if tracker.today().filter(state=ScreenState.UNLOCKED).__len__() > 1:
+    if tracker.today().filter(state=ScreenState.UNLOCKED).__len__() > 1 \
+            and toggl_handler.get_entries_started_today_count() > 0:
         current_entry = toggl_handler.get_current_entry()
         if current_entry is None:
             Notifications().send_notification(

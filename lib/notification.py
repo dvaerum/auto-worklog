@@ -124,7 +124,7 @@ class _Notifications:
         else:
             for index, action in enumerate(actions):
                 msg_id = self.dbus_interface_obj.Notify(
-                    notify_app_name + f" ({index + 1}/{actions.__len__()})",
+                    notify_app_name + f" ({index + 1}/{actions.__len__()})" if actions.__len__() > 1 else "",
                     notify_replace_id,
                     notify_app_icon,
                     notify_summary,

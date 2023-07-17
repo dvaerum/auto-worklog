@@ -4,9 +4,6 @@ import signal
 
 import pendulum
 
-# LIB_PATH = Path(__file__).absolute().parent.joinpath('lib')
-# sys.path.insert(0, LIB_PATH.__str__())
-
 from lib.lock_screen_notifier import LockScreenNotifier
 from lib.notification import Notifications
 from lib.tracker import Tracker
