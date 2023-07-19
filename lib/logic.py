@@ -64,12 +64,13 @@ def _if_yes_then_start_toggl_for_the_1st_time_today(msg_id: int, action_id: int)
 def first_unlock_today() -> None:
     tracker = Tracker()
     toggl_handler = TogglHandler()
+    notifications = Notifications()
 
     if tracker.today().filter(state=ScreenState.UNLOCKED).__len__() > 1 \
             and toggl_handler.get_entries_started_today_count() > 0:
         current_entry = toggl_handler.get_current_entry()
         if current_entry is None:
-            Notifications().send_notification(
+            notifications.send_notification(
                 title='Not logging time',
                 message=f'You are not currently logging time, do you want to?',
                 actions=["Yes"],
@@ -82,7 +83,7 @@ def first_unlock_today() -> None:
 
         current_entry = toggl_handler.get_current_entry()
         if current_entry is not None and current_entry.start.date() == pendulum.yesterday().date():
-            Notifications().send_notification(
+            message_ids = notifications.send_notification(
                 title='First unlock of the day',
                 message=f'You forgot to stop Toggl yesterday, do you want to stop it now?',
                 icon_path="/usr/share/icons/breeze/apps/48/ktimetracker.svg",
@@ -90,10 +91,11 @@ def first_unlock_today() -> None:
                 action_callback_function=_if_yes_then_stop_toggl,
                 timeout=60 * 1000,
             )
+            notifications.wait_for_message_ids(message_ids)
             current_entry = toggl_handler.get_current_entry()
 
         if current_entry is None:
-            Notifications().send_notification(
+            notifications.send_notification(
                 title='First unlock of the day',
                 message=f'Do you want to start Toggl',
                 actions=["Yes"],
