@@ -15,7 +15,12 @@ def _if_yes_then_stop_toggl(msg_id: int, action_id: int) -> None:
             raise Exception("No entry found, cannot stop Toggle, implement handler for this case!!!")
 
         toggl_handler = TogglHandler()
-        toggl_handler.stop_current_entry(entry.datetime)
+        time_entry = toggl_handler.stop_current_entry(entry.datetime)
+        print("{} [=] Logic - Stopped time entry ({}), at {}".format(
+            pendulum.now().to_datetime_string(),
+            time_entry.id,
+            time_entry.stop.to_datetime_string(),
+        ))
 
 
 def _if_yes_then_start_toggl(msg_id: int, action_id: int) -> None:
@@ -26,10 +31,15 @@ def _if_yes_then_start_toggl(msg_id: int, action_id: int) -> None:
             raise Exception("No entry found, cannot start Toggle, implement handler for this case!!!")
 
         toggl_handler = TogglHandler()
-        toggl_handler.start_entry(
+        time_entry = toggl_handler.start_entry(
             description="Working",
             start_time=entry.datetime,
         )
+        print("{} [=] Logic - Started time entry ({}), at {}".format(
+            pendulum.now().to_datetime_string(),
+            time_entry.id,
+            time_entry.start.to_datetime_string(),
+        ))
 
 
 def _if_yes_then_start_toggl_for_the_1st_time_today(msg_id: int, action_id: int) -> None:
@@ -40,10 +50,15 @@ def _if_yes_then_start_toggl_for_the_1st_time_today(msg_id: int, action_id: int)
             raise Exception("No entry found, cannot start Toggle, implement handler for this case!!!")
 
         toggl_handler = TogglHandler()
-        toggl_handler.start_entry(
+        time_entry = toggl_handler.start_entry(
             description="Working",
             start_time=entry.datetime.subtract(minutes=5),
         )
+        print("{} [=] Logic - Started time entry ({}), at {}".format(
+            pendulum.now().to_datetime_string(),
+            time_entry.id,
+            time_entry.start.to_datetime_string(),
+        ))
 
 
 def first_unlock_today() -> None:
@@ -146,12 +161,22 @@ def check_for_lunch_break_when_unlocking() -> None:
             accept_id_and_above = 3
             if action_id >= accept_id_and_above:
                 _toggl_handler = TogglHandler()
-                _toggl_handler.stop_current_entry(lunch_breaks[action_id - accept_id_and_above].start)
+                time_entry_stop = _toggl_handler.stop_current_entry(lunch_breaks[action_id - accept_id_and_above].start)
+                print("{} [=] Logic - Stopped time entry ({}), at {}".format(
+                    pendulum.now().to_datetime_string(),
+                    time_entry_stop.id,
+                    time_entry_stop.start.to_datetime_string(),
+                ))
 
-                _toggl_handler.start_entry(
+                time_entry_start = _toggl_handler.start_entry(
                     description="Working",
                     start_time=lunch_breaks[action_id - accept_id_and_above].end,
                 )
+                print("{} [=] Logic - Started time entry ({}), at {}".format(
+                    pendulum.now().to_datetime_string(),
+                    time_entry_start.id,
+                    time_entry_start.start.to_datetime_string(),
+                ))
 
         Notifications().send_notification(
             title='Lunch break',
