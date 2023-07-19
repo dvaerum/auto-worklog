@@ -1,3 +1,4 @@
+import threading
 from typing import Callable, List, Union
 
 import dbus
@@ -21,6 +22,8 @@ DBusGMainLoop(set_as_default=True)
 class _LockScreenNotifier:
     _glib_loop: GLib.MainLoop
     _session_bus: dbus.SessionBus
+    _thread: threading.Thread
+
     _lock_subscription: List[Callable[[], None]]
     _unlock_subscription: List[Callable[[], None]]
 
@@ -37,6 +40,9 @@ class _LockScreenNotifier:
             dbus_interface='org.freedesktop.ScreenSaver',
             signal_name='ActiveChanged'
         )
+
+        self._thread = threading.Thread(target=self._glib_loop.run)
+        self._thread.start()
 
     def subscribe_to_lock_notification(self, func_: Callable[[], None]) -> None:
         self._lock_subscription.append(func_)
@@ -71,9 +77,9 @@ class _LockScreenNotifier:
                 f'Screen unlocked event is not implemented '
                 f'for the value ({type(screen_locked)}): {screen_locked}'
             )
-        
-    def run(self) -> None:
-        self._glib_loop.run()
+
+    def join(self) -> None:
+        self._thread.join()
 
     def quit(self) -> None:
         print("{} [=] LockScreenNotifier - Told to quit".format(pendulum.now().to_datetime_string()))

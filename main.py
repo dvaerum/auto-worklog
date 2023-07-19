@@ -59,7 +59,8 @@ def main():
 
     if RUNNER_ALLOWED:
         print('{} [=] Main - Ready 😁'.format(pendulum.now().to_datetime_string()))
-        lock_screen_notifier.run()
+        lock_screen_notifier.join()
+        Notifications().join()
 
     tracker.save()
 

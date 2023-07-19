@@ -1,7 +1,8 @@
+import threading
 from time import sleep
 
 import unittest
-from typing import Callable, Dict, Set, Optional
+from typing import Callable, Dict, Set, Optional, Union
 
 import dbus
 import pendulum
@@ -34,8 +35,7 @@ class _Notifications:
 
     _glib_loop: GLib.MainLoop
     _session_bus: dbus.SessionBus
-
-    _blocking_allowed: bool
+    _thread: threading.Thread
 
     bus_service = "org.freedesktop.Notifications"
     bus_path = "/org/freedesktop/Notifications"
@@ -58,6 +58,9 @@ class _Notifications:
             signal_name='NotificationClosed'
         )
 
+        self._thread = threading.Thread(name=__name__, target=self._glib_loop.run)
+        self._thread.start()
+
         self.dbus_obj = dbus.SessionBus().get_object(
             bus_name=self.bus_service,
             object_path=self.bus_path,
@@ -71,7 +74,7 @@ class _Notifications:
     def send_notification(
             self, title: str, message: str, icon_path: str = None, actions=None,
             action_callback_function: TypeNotificationCallback = None, timeout: int = 5000,
-            blocking: bool = True, group_name: str = None,
+            group_name: str = None,
     ):
         """
 
@@ -130,7 +133,8 @@ class _Notifications:
                 notify_hints,
                 notify_timeout,
             )
-            collect_all_msg_ids.add(int(msg_id))
+            msg_id = int(msg_id)
+            collect_all_msg_ids.add(msg_id)
 
         else:
             for index, action in enumerate(actions):
@@ -144,7 +148,8 @@ class _Notifications:
                     notify_hints,
                     notify_timeout,
                 )
-                collect_all_msg_ids.add(int(msg_id))
+                msg_id = int(msg_id)
+                collect_all_msg_ids.add(msg_id)
 
                 if group_name is not None:
                     self._grouped_msg_ids.setdefault(group_name, set())
@@ -158,19 +163,12 @@ class _Notifications:
 
         if action_callback_function is not None:
             if self._glib_loop.is_running() is False:
-                print("{} [=] Notification - _glib_loop: Starter".format(pendulum.now().to_datetime_string()))
-                self._glib_loop.run()
-                print("{} [=] Notification - _glib_loop: Finished".format(pendulum.now().to_datetime_string()))
+                print("{} [=] Notification - _thread: Starter".format(pendulum.now().to_datetime_string()))
+                self._thread.start()
+                print("{} [=] Notification - _thread: Finished".format(pendulum.now().to_datetime_string()))
 
-            elif blocking is True:
-                self._blocking_allowed = True
-                print("{} [=] Notification - blocking: Starter".format(pendulum.now().to_datetime_string()))
-                while collect_all_msg_ids & set(self._waiting_for_the_ip.keys()):
-                    if group_name and group_name not in self._grouped_msg_ids:
-                        break
-
-                    sleep(0.5)
-                print("{} [=] Notification - blocking: Stopped".format(pendulum.now().to_datetime_string()))
+            else:
+                print("{} [=] Notification - _thread: Running".format(pendulum.now().to_datetime_string()))
 
         return collect_all_msg_ids
 
@@ -180,7 +178,7 @@ class _Notifications:
             action_id = int(args[1])
 
             if msg_id in self._waiting_for_the_ip:
-                print("{} [=] signal_handler - msg_id: {}, action_id: {}".format(
+                print("{} [=] signal_handler (was expected) - msg_id: {}, action_id: {}".format(
                     pendulum.now().to_datetime_string(),
                     msg_id, action_id,
                 ))
@@ -199,13 +197,35 @@ class _Notifications:
                             self.dbus_interface_obj.CloseNotification(dismissed_msg_id)
                         break
 
-        if self._waiting_for_the_ip.__len__() == 0:
-            self._glib_loop.quit()
+            else:
+                print("{} [=] signal_handler (was not expected) - msg_id: {}, action_id: {}".format(
+                    pendulum.now().to_datetime_string(),
+                    msg_id, action_id,
+                ))
+        else:
+            print("{} [=] signal_handler (unknown) - args: {}".format(
+                pendulum.now().to_datetime_string(),
+                args,
+            ))
+
+    def join(self) -> None:
+        self._thread.join()
 
     def quit(self) -> None:
-        self._blocking_allowed = False
         if self._glib_loop.is_running():
             self._glib_loop.quit()
+
+    def wait_for_message_ids(self, message_ids: Union[Set[int], int]) -> None:
+        if isinstance(message_ids, int):
+            message_ids = {message_ids}
+
+        if self._glib_loop.is_running():
+            while message_ids & set(self._waiting_for_the_ip.keys()):
+                sleep(0.1)
+        else:
+            print("{} [=] Notification - wait_for_message_ids - _glib_loop is not running".format(
+                pendulum.now().to_datetime_string(),
+            ))
 
 
 def Notifications() -> _Notifications:
