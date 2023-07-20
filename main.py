@@ -14,11 +14,11 @@ from lib.logic import first_unlock_today, check_for_lunch_break_when_unlocking
 RUNNER_ALLOWED = True
 
 
-def handler(signum, frame):
+def handler(signum, _frame):
     global RUNNER_ALLOWED
 
-    signame = signal.Signals(signum).name
-    print(f'Stop signal {signame} ({signum}) was received, quits...')
+    sig_name = signal.Signals(signum).name
+    print(f'Stop signal {sig_name} ({signum}) was received, quits...')
 
     RUNNER_ALLOWED = False
 
