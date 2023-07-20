@@ -1,6 +1,6 @@
-import sys
 import signal
-# from pathlib import Path
+from argparse import ArgumentParser
+from os import environ
 
 import pendulum
 
@@ -8,8 +8,7 @@ from lib.lock_screen_notifier import LockScreenNotifier
 from lib.notification import Notifications
 from lib.tracker import Tracker
 from lib.toggl_handler import TogglHandler
-from lib.logic import first_unlock_today, check_for_lunch_break_when_unlocking
-
+from lib.logic import first_unlock_today, check_for_lunch_break_when_unlocking, AutoAnswer, set_auto_answer
 
 RUNNER_ALLOWED = True
 
@@ -41,7 +40,28 @@ def screen_unlocked():
 def main():
     global RUNNER_ALLOWED
 
-    TogglHandler(token='e4d92673be6dc4f8483e52081c2ae946')
+    arg_parser = ArgumentParser()
+    arg_parser.add_argument('--token', type=str, required=False,
+                            default=environ.get("AUTO_WORKLOG_TOGGL_TOKEN", None),
+                            help='Toggl API token')
+    arg_parser.add_argument('--auto-answer', type=str, required=False, nargs='+',
+                            default=[
+                                answer for answer in environ.get("AUTO_WORKLOG_AUTO_ANSWER", "").split(',')
+                                if answer in AutoAnswer.__members__],
+                            choices=list(AutoAnswer.__members__.keys()),
+                            help='Auto answer to questions')
+    args = arg_parser.parse_args()
+
+    if args.auto_answer:
+        auto_answer = AutoAnswer(sum([AutoAnswer[x] for x in args.auto_answer]))
+        print('{} [=] Main - Auto answer: {}'.format(pendulum.now().to_datetime_string(), auto_answer.__repr__()))
+        set_auto_answer(auto_answer)
+    else:
+        print('{} [=] Main - Auto answer: {}'.format(pendulum.now().to_datetime_string(), AutoAnswer.disabled))
+
+    if args.token:
+        print('{} [=] Main - Toggl token received'.format(pendulum.now().to_datetime_string()))
+        TogglHandler(token=args.token)
 
     tracker = Tracker()
 

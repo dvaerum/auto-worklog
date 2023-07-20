@@ -1,3 +1,4 @@
+from enum import IntFlag
 from typing import NamedTuple
 
 import pendulum
@@ -5,6 +6,23 @@ import pendulum
 from .tracker import Tracker, ScreenState
 from .notification import Notifications
 from .toggl_handler import TogglHandler
+
+
+class AutoAnswer(IntFlag):
+    disabled = 0
+    forgot_to_stop_yesterday = 1
+    first_unlock_today = 2
+    unlock = 4
+    lunch_break = 8
+
+
+# _AUTO_ANSWER = AutoAnswer.disabled
+_AUTO_ANSWER = AutoAnswer.disabled
+
+
+def set_auto_answer(auto_answer: AutoAnswer) -> None:
+    global _AUTO_ANSWER
+    _AUTO_ANSWER = auto_answer
 
 
 def _if_yes_then_stop_toggl(msg_id: int, action_id: int) -> None:
@@ -70,38 +88,65 @@ def first_unlock_today() -> None:
             and toggl_handler.get_entries_started_today_count() > 0:
         current_entry = toggl_handler.get_current_entry()
         if current_entry is None:
-            notifications.send_notification(
-                title='Not logging time',
-                message=f'You are not currently logging time, do you want to?',
-                actions=["Yes"],
-                action_callback_function=_if_yes_then_start_toggl,
-                timeout=60 * 1000,
-            )
+            if AutoAnswer.unlock in _AUTO_ANSWER:
+                _if_yes_then_start_toggl(0, 3)
+                notifications.send_notification(
+                    title='Not logging time (Updated)',
+                    message=f'You are not currently logging time, so I started Toggl for you 😉',
+                    timeout=60 * 1000,
+                )
+
+            else:
+                notifications.send_notification(
+                    title='Not logging time',
+                    message=f'You are not currently logging time, do you want to?',
+                    actions=["Yes"],
+                    action_callback_function=_if_yes_then_start_toggl,
+                    timeout=60 * 1000,
+                )
 
     entry = tracker.today().first_entry(ScreenState.UNLOCKED)
     if entry is not None:
-
         current_entry = toggl_handler.get_current_entry()
         if current_entry is not None and current_entry.start.date() == pendulum.yesterday().date():
-            message_ids = notifications.send_notification(
-                title='First unlock of the day',
-                message=f'You forgot to stop Toggl yesterday, do you want to stop it now?',
-                icon_path="/usr/share/icons/breeze/apps/48/ktimetracker.svg",
-                actions=["Yes"],
-                action_callback_function=_if_yes_then_stop_toggl,
-                timeout=60 * 1000,
-            )
-            notifications.wait_for_message_ids(message_ids)
+            if AutoAnswer.forgot_to_stop_yesterday in _AUTO_ANSWER:
+                _if_yes_then_stop_toggl(0, 3)
+                notifications.send_notification(
+                    title='Forgot to stop Toggl (Updated)',
+                    message=f'You forgot to stop Toggl yesterday, so I stopped it for you 😉',
+                    timeout=60 * 1000,
+                )
+
+            else:
+                message_ids = notifications.send_notification(
+                    title='First unlock of the day',
+                    message=f'You forgot to stop Toggl yesterday, do you want to stop it now?',
+                    icon_path="/usr/share/icons/breeze/apps/48/ktimetracker.svg",
+                    actions=["Yes"],
+                    action_callback_function=_if_yes_then_stop_toggl,
+                    timeout=60 * 1000,
+                )
+                notifications.wait_for_message_ids(message_ids)
+
             current_entry = toggl_handler.get_current_entry()
 
         if current_entry is None:
-            notifications.send_notification(
-                title='First unlock of the day',
-                message=f'Do you want to start Toggl',
-                actions=["Yes"],
-                action_callback_function=_if_yes_then_start_toggl_for_the_1st_time_today,
-                timeout=60 * 1000,
-            )
+            if AutoAnswer.first_unlock_today in _AUTO_ANSWER:
+                _if_yes_then_start_toggl_for_the_1st_time_today(0, 3)
+                notifications.send_notification(
+                    title='First unlock of the day (Updated)',
+                    message=f'It is the first time you unlock your computer today, so I started Toggl for you 😉',
+                    timeout=60 * 1000,
+                )
+
+            else:
+                notifications.send_notification(
+                    title='First unlock of the day',
+                    message=f'Do you want to start Toggl',
+                    actions=["Yes"],
+                    action_callback_function=_if_yes_then_start_toggl_for_the_1st_time_today,
+                    timeout=60 * 1000,
+                )
 
 
 class Break(NamedTuple):
@@ -111,11 +156,14 @@ class Break(NamedTuple):
 
 
 def check_for_lunch_break_when_unlocking() -> None:
+    global _AUTO_ANSWER
+    toggl_handler = TogglHandler()
+    notifications = Notifications()
+
     # Check if there is a change that I have come back from lunch break
     if pendulum.now() < pendulum.now().replace(hour=11, minute=50):
         return
 
-    toggl_handler = TogglHandler()
     current_entry = toggl_handler.get_current_entry()
     if toggl_handler.get_current_entry() is None:
         return
@@ -143,7 +191,7 @@ def check_for_lunch_break_when_unlocking() -> None:
             start = None
             continue
 
-    lunch_breaks = []
+    tmp_lunch_breaks = []
     buttons = []
     for break_ in sorted(breaks, key=lambda x: x.duration, reverse=True):
         if break_.duration.in_minutes() < 15:
@@ -152,18 +200,19 @@ def check_for_lunch_break_when_unlocking() -> None:
         if break_.start < current_entry.start:
             continue
 
-        lunch_breaks.append(break_)
+        tmp_lunch_breaks.append(break_)
         buttons.append(
             f"{break_.duration.in_minutes()} min "
             f"({break_.start.format('HH:mm')} - {break_.end.format('HH:mm')})"
         )
 
     if buttons.__len__() >= 1:
+        lunch_breaks = {}
+
         def lunch_break(msg_id, action_id):
-            accept_id_and_above = 3
-            if action_id >= accept_id_and_above:
+            if action_id == 3:
                 _toggl_handler = TogglHandler()
-                time_entry_stop = _toggl_handler.stop_current_entry(lunch_breaks[action_id - accept_id_and_above].start)
+                time_entry_stop = _toggl_handler.stop_current_entry(lunch_breaks[msg_id].start)
                 print("{} [=] Logic - Stopped time entry ({}), at {}".format(
                     pendulum.now().to_datetime_string(),
                     time_entry_stop.id,
@@ -172,7 +221,7 @@ def check_for_lunch_break_when_unlocking() -> None:
 
                 time_entry_start = _toggl_handler.start_entry(
                     description="Working",
-                    start_time=lunch_breaks[action_id - accept_id_and_above].end,
+                    start_time=lunch_breaks[msg_id].end,
                 )
                 print("{} [=] Logic - Started time entry ({}), at {}".format(
                     pendulum.now().to_datetime_string(),
@@ -180,11 +229,28 @@ def check_for_lunch_break_when_unlocking() -> None:
                     time_entry_start.start.to_datetime_string(),
                 ))
 
-        Notifications().send_notification(
-            title='Lunch break',
-            message=f'It looks like you have had lunch break, do you want to register the break?',
-            actions=buttons,
-            action_callback_function=lunch_break,
-            timeout=60 * 1000,
-            group_name="lunch_break",
-        )
+        if buttons.__len__() == 1 and AutoAnswer.lunch_break in _AUTO_ANSWER:
+            lunch_breaks[-1] = tmp_lunch_breaks[0]
+            lunch_break(-1, 3)
+            notifications.send_notification(
+                title='Lunch break (Updated)',
+                message="You have had lunch break which you did not register, but I have done it for you 😉 "
+                        "The lunch break was {} min, start at {}".format(
+                            tmp_lunch_breaks[0].duration.in_minutes(),
+                            tmp_lunch_breaks[0].start.format('HH:mm'),
+                        ),
+                timeout=60 * 1000,
+            )
+
+        else:
+            message_ids = notifications.send_notification(
+                title='Lunch break',
+                message=f'It looks like you have had lunch break, do you want to register the break?',
+                actions=buttons,
+                action_callback_function=lunch_break,
+                timeout=60 * 1000,
+                group_name="lunch_break",
+            )
+
+            for index, _msg_id in enumerate(sorted(message_ids)):
+                lunch_breaks[_msg_id] = tmp_lunch_breaks[index]
