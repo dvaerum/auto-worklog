@@ -9,9 +9,7 @@ import pendulum
 from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
 
-
 _LOCK_SCREEN_NOTIFIER = None
-
 
 # Does not work, if configured in the unittest class, I keep getting the error message.
 # Error message:
@@ -19,7 +17,6 @@ _LOCK_SCREEN_NOTIFIER = None
 #   D-Bus connections must be attached to a main loop by passing mainloop=... to the constructor or
 #   calling dbus.set_default_main_loop(...)
 DBusGMainLoop(set_as_default=True)
-
 
 TypeNotificationCallback = Callable[[int, int], None]
 
@@ -73,7 +70,7 @@ class _Notifications:
 
     def send_notification(
             self, title: str, message: str, icon_path: str = None, actions=None,
-            action_callback_function: TypeNotificationCallback = None, timeout: int = 5000,
+            action_callback_function: TypeNotificationCallback = None, timeout_sec: int = 5,
             group_name: str = None,
     ):
         """
@@ -92,7 +89,7 @@ class _Notifications:
                                          one of the buttons are pressed. It takes two parameters ...
                                          - 1st parameter: message ID (msg_id)
                                          - 2nd parameter: action ID (action_id)
-        :param timeout: The timeout in milliseconds at which to expire the notification.
+        :param timeout_sec: The timeout in milliseconds at which to expire the notification.
         :param blocking: Is this function allowed to block the main thread?
         :param group_name: The notifications grouped?
                            Meaning that if you answer one notification, all the others disappear?
@@ -107,18 +104,17 @@ class _Notifications:
         notify_hints = {
             "urgency": 1,
         }
-        notify_timeout = timeout
+        notify_timeout = timeout_sec * 1000
 
         print(f"{pendulum.today().to_datetime_string()} [=] Notification - send_notification - "
-            f"notify_app_name: {notify_app_name} - "
-            f"notify_replace_id: {notify_replace_id} - "
-            f"notify_app_icon: {notify_app_icon} - "
-            f"notify_summary: {notify_summary} - "
-            f"notify_body: {notify_body} - "
-            f"actions: {actions} - "
-            f"notify_hints: {notify_hints} - "
-            f"notify_timeout: {notify_timeout}"
-        )
+              f"notify_app_name: {notify_app_name} - "
+              f"notify_replace_id: {notify_replace_id} - "
+              f"notify_app_icon: {notify_app_icon} - "
+              f"notify_summary: {notify_summary} - "
+              f"notify_body: {notify_body} - "
+              f"actions: {actions} - "
+              f"notify_hints: {notify_hints} - "
+              f"notify_timeout: {notify_timeout}")
 
         collect_all_msg_ids = set()
 
@@ -243,7 +239,7 @@ class TestNotification(unittest.TestCase):
         replace_id = _notifications.send_notification(
             "test_send_notification",
             "message",
-            timeout=100,
+            timeout_sec=100,
         )
         self.assertTrue(replace_id)
 
@@ -253,7 +249,7 @@ class TestNotification(unittest.TestCase):
             "test_send_notification_with_icon",
             "message3",
             icon_path="/usr/share/icons/breeze/apps/48/ktimetracker.svg",
-            timeout=100,
+            timeout_sec=100,
         )
         self.assertTrue(replace_id)
 
@@ -272,7 +268,7 @@ class TestNotification(unittest.TestCase):
             icon_path="/usr/share/icons/breeze/apps/48/ktimetracker.svg",
             actions=["Start"],
             action_callback_function=quit_loop,
-            timeout=100,
+            timeout_sec=100,
         )
 
         self.assertTrue(replace_id)
@@ -294,7 +290,7 @@ class TestNotification(unittest.TestCase):
             icon_path="/usr/share/icons/breeze/apps/48/ktimetracker.svg",
             actions=["1", "2", "3"],
             action_callback_function=quit_loop,
-            timeout=100,
+            timeout_sec=100,
         )
 
         self.assertTrue(replace_id)
@@ -319,7 +315,7 @@ class TestNotification(unittest.TestCase):
             icon_path="/usr/share/icons/breeze/apps/48/ktimetracker.svg",
             actions=["1", "2", "3"],
             action_callback_function=quit_loop,
-            timeout=3000,
+            timeout_sec=3000,
             group_name="test_send_notification_with_multiple_button_and_group",
         )
 
@@ -337,7 +333,7 @@ class TestNotification(unittest.TestCase):
             icon_path="/usr/share/icons/breeze/apps/48/ktimetracker.svg",
             actions=["1 (again)", "2 (again)", "3 (again)"],
             action_callback_function=quit_loop,
-            timeout=3000,
+            timeout_sec=3000,
             group_name="test_send_notification_with_multiple_button_and_group",
         )
 

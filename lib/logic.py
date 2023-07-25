@@ -8,6 +8,10 @@ from .notification import Notifications
 from .toggl_handler import TogglHandler
 
 
+_TIMEOUT_INFO_MSG_SEC = 10
+_TIMEOUT_REPLY_MSG_SEC = 20
+
+
 class AutoAnswer(IntFlag):
     disabled = 0
     forgot_to_stop_yesterday = 1
@@ -93,7 +97,7 @@ def first_unlock_today() -> None:
                 notifications.send_notification(
                     title='Not logging time (Updated)',
                     message=f'You are not currently logging time, so I started Toggl for you 😉',
-                    timeout=60 * 1000,
+                    timeout_sec=_TIMEOUT_INFO_MSG_SEC,
                 )
 
             else:
@@ -102,7 +106,7 @@ def first_unlock_today() -> None:
                     message=f'You are not currently logging time, do you want to?',
                     actions=["Yes"],
                     action_callback_function=_if_yes_then_start_toggl,
-                    timeout=60 * 1000,
+                    timeout_sec=_TIMEOUT_REPLY_MSG_SEC,
                 )
 
     entry = tracker.today().first_entry(ScreenState.UNLOCKED)
@@ -114,7 +118,7 @@ def first_unlock_today() -> None:
                 notifications.send_notification(
                     title='Forgot to stop Toggl (Updated)',
                     message=f'You forgot to stop Toggl yesterday, so I stopped it for you 😉',
-                    timeout=60 * 1000,
+                    timeout_sec=_TIMEOUT_INFO_MSG_SEC,
                 )
 
             else:
@@ -124,7 +128,7 @@ def first_unlock_today() -> None:
                     icon_path="/usr/share/icons/breeze/apps/48/ktimetracker.svg",
                     actions=["Yes"],
                     action_callback_function=_if_yes_then_stop_toggl,
-                    timeout=60 * 1000,
+                    timeout_sec=_TIMEOUT_REPLY_MSG_SEC,
                 )
                 notifications.wait_for_message_ids(message_ids)
 
@@ -136,7 +140,7 @@ def first_unlock_today() -> None:
                 notifications.send_notification(
                     title='First unlock of the day (Updated)',
                     message=f'It is the first time you unlock your computer today, so I started Toggl for you 😉',
-                    timeout=60 * 1000,
+                    timeout_sec=_TIMEOUT_INFO_MSG_SEC,
                 )
 
             else:
@@ -145,7 +149,7 @@ def first_unlock_today() -> None:
                     message=f'Do you want to start Toggl',
                     actions=["Yes"],
                     action_callback_function=_if_yes_then_start_toggl_for_the_1st_time_today,
-                    timeout=60 * 1000,
+                    timeout_sec=_TIMEOUT_REPLY_MSG_SEC,
                 )
 
 
@@ -239,7 +243,7 @@ def check_for_lunch_break_when_unlocking() -> None:
                             tmp_lunch_breaks[0].duration.in_minutes(),
                             tmp_lunch_breaks[0].start.format('HH:mm'),
                         ),
-                timeout=60 * 1000,
+                timeout_sec=_TIMEOUT_INFO_MSG_SEC,
             )
 
         else:
@@ -248,7 +252,7 @@ def check_for_lunch_break_when_unlocking() -> None:
                 message=f'It looks like you have had lunch break, do you want to register the break?',
                 actions=buttons,
                 action_callback_function=lunch_break,
-                timeout=60 * 1000,
+                timeout_sec=_TIMEOUT_REPLY_MSG_SEC,
                 group_name="lunch_break",
             )
 
