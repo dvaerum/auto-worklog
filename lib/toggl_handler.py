@@ -1,10 +1,11 @@
 import unittest
+from asyncio import sleep
 from typing import Optional, List
 
 import pendulum
 
 # noinspection PyUnresolvedReferences
-from toggl import api, utils
+from toggl import api, utils, exceptions
 
 
 _TOGGL_HANDLER = None
@@ -69,6 +70,7 @@ class _TogglHandler:
         return self._offline_id
 
     def start_entry(self, description: str, start_time: pendulum.duration = None) -> api.TimeEntry:
+        current_entry = None
 
         if start_time is None:
             start = pendulum.now()
@@ -89,10 +91,20 @@ class _TogglHandler:
             )
             current_entry.id = self._get_id()
         else:
-            current_entry = api.TimeEntry.start_and_save(
-                description=description,
-                start=start,
-            )
+            _run = True
+            while _run:
+                try:
+                    current_entry = api.TimeEntry.start_and_save(
+                        description=description,
+                        start=start,
+                    )
+                    _run = False
+                except exceptions.TogglServerException as err:
+                    print("{} [=] Toggl (start_entry) - error msg: {}".format(
+                        pendulum.now().to_datetime_string(),
+                        err,
+                    ))
+                    sleep(5)
 
         self._current_entry = current_entry
         if self._current_entry not in self._entries:
@@ -114,7 +126,17 @@ class _TogglHandler:
             if current_entry.id < 0:
                 self._current_entry.id = None
 
-            current_entry.stop_and_save(stop_time)
+            _run = True
+            while _run:
+                try:
+                    current_entry.stop_and_save(stop_time)
+                    _run = False
+                except exceptions.TogglServerException as err:
+                    print("{} [=] Toggl (stop_current_entry) - error msg: {}".format(
+                        pendulum.now().to_datetime_string(),
+                        err,
+                    ))
+                    sleep(5)
 
         return current_entry
 
