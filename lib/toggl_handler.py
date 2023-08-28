@@ -49,21 +49,50 @@ class _TogglHandler:
 
         return self._current_entry
 
-    def get_entries_started_today(self) -> List[api.TimeEntry]:
-        today = pendulum.today()
-
+    def _get_entries_started(self, date: pendulum.DateTime) -> List[api.TimeEntry]:
+        _date = date.replace(hour=0, minute=0, second=0, microsecond=0)
         if self.get_token() is None:
             entries = [
                 entry for entry in self._entries
-                if entry.start.date() == today
+                if entry.start.date() == date
             ]
             return entries
 
-        self._entries = api.TimeEntry.objects.filter(start=today)
+        self._entries = api.TimeEntry.objects.filter(start=_date)
         return self._entries
+
+    def get_entries_started_today(self) -> List[api.TimeEntry]:
+        today = pendulum.now()
+        entries = self._get_entries_started(date=today)
+        return entries
 
     def get_entries_started_today_count(self) -> int:
         return len(self.get_entries_started_today())
+
+    def _get_entries_stopped(self, date: pendulum.datetime) -> List[api.TimeEntry]:
+        _date: pendulum.DateTime = date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        if self.get_token() is None:
+            entries = [
+                entry for entry in self._entries
+                if hasattr(entry, "stop") and entry.stop and entry.stop.date() == date
+            ]
+            return entries
+
+        _entries = api.TimeEntry.objects.filter(stop=date)
+        entries = [
+            entry for entry in _entries
+            if hasattr(entry, "stop") and entry.stop and entry.stop.date() == _date.date()
+        ]
+        self._entries = entries
+        return self._entries
+
+    def get_entries_stopped_today(self) -> List[api.TimeEntry]:
+        today = pendulum.now()
+        entries = self._get_entries_stopped(date=today)
+        return entries
+
+    def get_entries_stopped_today_count(self) -> int:
+        return len(self.get_entries_stopped_today())
 
     def _get_id(self) -> int:
         self._offline_id -= 1

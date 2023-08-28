@@ -1,16 +1,17 @@
 import os
 from json import load as json_load, dump as json_dump
 from pathlib import Path
-from typing import Dict, Optional, Union, NamedTuple, List
+from typing import Optional, Union, NamedTuple, List
 import unittest
 
 import pendulum
-from sortedcontainers import SortedDict, SortedKeysView
+from sortedcontainers import SortedDict, SortedKeysView, SortedValuesView, SortedItemsView
 
 from .misc import ScreenState
 
 
 _TRACKER = None
+_LOAD_DAYS_BACK: int = 35
 
 
 def pendulum_now() -> pendulum.DateTime:
@@ -23,7 +24,7 @@ class Entry(NamedTuple):
 
 
 class Day:
-    _entries: Dict[pendulum.DateTime, ScreenState]
+    _entries: SortedDict[pendulum.DateTime, ScreenState]
 
     def __init__(self, raw_data=None) -> None:
         self._entries = SortedDict()
@@ -105,10 +106,13 @@ class Day:
             if state is not None and state != _state:
                 continue
 
-            if start is not None and start > _date_time:
+            if   start is not None and end is not None and not start <= _date_time <= end:
                 continue
 
-            if end is not None and end < _date_time:
+            elif start is not None and end is     None and not start <= _date_time:
+                continue
+
+            elif start is     None and end is not None and not          _date_time <= end:
                 continue
 
             result[_date_time] = _state
@@ -130,10 +134,16 @@ class Day:
         return self._entries.keys()
 
 
-class Days:
-    _days: Dict[pendulum.Date, Day]
+class _ManyDays(Day):
+    def __init__(self, entries: SortedDict[pendulum.DateTime, ScreenState]) -> None:
+        super().__init__()
+        self._entries = entries
 
-    def __init__(self, raw_data=None, load_days_back: int = 14) -> None:
+
+class Days:
+    _days: SortedDict[pendulum.Date, Day]
+
+    def __init__(self, raw_data=None, load_days_back: int = _LOAD_DAYS_BACK) -> None:
         self._days = SortedDict()
 
         load_days_back_date = pendulum_now().subtract(days=load_days_back).date()
@@ -200,7 +210,16 @@ class Days:
         return iter(self._days)
 
     def keys(self) -> SortedKeysView[pendulum.Date]:
+        # noinspection PyTypeChecker
         return self._days.keys()
+
+    def values(self) -> SortedValuesView[Day]:
+        # noinspection PyTypeChecker
+        return self._days.values()
+
+    def items(self) -> SortedItemsView[pendulum.Date, Day]:
+        # noinspection PyTypeChecker
+        return self._days.items()
 
 
 class _Tracker:
@@ -245,6 +264,10 @@ class _Tracker:
         self._trigger_screen_state(ScreenState.UNLOCKED)
 
     def _trigger_screen_state(self, screen_state: ScreenState) -> None:
+        print('{} [=] Screen {}'.format(
+            pendulum.now().to_datetime_string(),
+            screen_state.name,
+        ))
         self._days.today()[pendulum_now()] = screen_state
 
         self.save()
@@ -254,11 +277,22 @@ class _Tracker:
             with open(self.file_path, 'w') as file:
                 json_dump(self._days.dump(), file, indent=4, default=_json_dump_default)
 
-    def today(self) -> Day:
+    def from_today_only(self) -> Day:
         return self._days.today()
 
-    def yesterday(self) -> Day:
+    def from_yesterday_only(self) -> Day:
         return self._days.yesterday()
+
+    def from_yesterday_and_backwards(self):
+        entries = SortedDict()
+        for date, value in self._days.items():
+            if date == pendulum_now().date():
+                continue
+
+            entries.update(value)
+
+        many_days = _ManyDays(entries)
+        return many_days
 
     def get_day(self, day) -> Day:
         return self._days[day]
@@ -300,15 +334,15 @@ class TestTracker(unittest.TestCase):
         )
         self.assertEqual(
             2,
-            tracker.today().count_entries(),
+            tracker.from_today_only().count_entries(),
         )
         self.assertEqual(
             ScreenState.LOCKED,
-            tracker.today()[0],
+            tracker.from_today_only()[0],
         )
         self.assertEqual(
             ScreenState.UNLOCKED,
-            tracker.today()[1],
+            tracker.from_today_only()[1],
         )
 
     def test_first_last_entry(self) -> None:
@@ -318,41 +352,41 @@ class TestTracker(unittest.TestCase):
         minute_earlier_10 = now.subtract(minutes=10)
         hour_earlier_1 = now.subtract(hours=1)
 
-        self.assertIsNone(tracker.today().first_entry())
-        self.assertIsNone(tracker.today().first_entry(state=ScreenState.LOCKED))
-        self.assertIsNone(tracker.today().first_entry(state=ScreenState.UNLOCKED))
-        self.assertIsNone(tracker.today().last_entry())
-        self.assertIsNone(tracker.today().last_entry(state=ScreenState.LOCKED))
-        self.assertIsNone(tracker.today().last_entry(state=ScreenState.UNLOCKED))
+        self.assertIsNone(tracker.from_today_only().first_entry())
+        self.assertIsNone(tracker.from_today_only().first_entry(state=ScreenState.LOCKED))
+        self.assertIsNone(tracker.from_today_only().first_entry(state=ScreenState.UNLOCKED))
+        self.assertIsNone(tracker.from_today_only().last_entry())
+        self.assertIsNone(tracker.from_today_only().last_entry(state=ScreenState.LOCKED))
+        self.assertIsNone(tracker.from_today_only().last_entry(state=ScreenState.UNLOCKED))
 
-        tracker.today()._entries[hour_earlier_1] = ScreenState.LOCKED
-        tracker.today()._entries[minute_earlier_10] = ScreenState.UNLOCKED
-        tracker.today()._entries[now] = ScreenState.LOCKED
-        tracker.today()._entries[minute_later_10] = ScreenState.UNLOCKED
+        tracker.from_today_only()._entries[hour_earlier_1] = ScreenState.LOCKED
+        tracker.from_today_only()._entries[minute_earlier_10] = ScreenState.UNLOCKED
+        tracker.from_today_only()._entries[now] = ScreenState.LOCKED
+        tracker.from_today_only()._entries[minute_later_10] = ScreenState.UNLOCKED
         self.assertEqual(
             Entry(hour_earlier_1, ScreenState.LOCKED),
-            tracker.today().first_entry(),
+            tracker.from_today_only().first_entry(),
         )
         self.assertEqual(
             Entry(hour_earlier_1, ScreenState.LOCKED),
-            tracker.today().first_entry(state=ScreenState.LOCKED),
+            tracker.from_today_only().first_entry(state=ScreenState.LOCKED),
         )
         self.assertEqual(
             Entry(minute_earlier_10, ScreenState.UNLOCKED),
-            tracker.today().first_entry(state=ScreenState.UNLOCKED),
+            tracker.from_today_only().first_entry(state=ScreenState.UNLOCKED),
         )
 
         self.assertEqual(
             Entry(minute_later_10, ScreenState.UNLOCKED),
-            tracker.today().last_entry(),
+            tracker.from_today_only().last_entry(),
         )
         self.assertEqual(
             Entry(now, ScreenState.LOCKED),
-            tracker.today().last_entry(state=ScreenState.LOCKED),
+            tracker.from_today_only().last_entry(state=ScreenState.LOCKED),
         )
         self.assertEqual(
             Entry(minute_later_10, ScreenState.UNLOCKED),
-            tracker.today().last_entry(state=ScreenState.UNLOCKED),
+            tracker.from_today_only().last_entry(state=ScreenState.UNLOCKED),
         )
 
     def test_filter(self) -> None:
@@ -363,13 +397,13 @@ class TestTracker(unittest.TestCase):
         minute_earlier_10 = now.subtract(minutes=10)
         hour_later_1 = now.add(hours=1)
         hour_earlier_1 = now.subtract(hours=1)
-        tracker.today()._entries[hour_earlier_1] = ScreenState.LOCKED
-        tracker.today()._entries[minute_earlier_10] = ScreenState.UNLOCKED
-        tracker.today()._entries[now] = ScreenState.LOCKED
-        tracker.today()._entries[minute_later_10] = ScreenState.UNLOCKED
-        tracker.today()._entries[hour_later_1] = ScreenState.LOCKED
+        tracker.from_today_only()._entries[hour_earlier_1] = ScreenState.LOCKED
+        tracker.from_today_only()._entries[minute_earlier_10] = ScreenState.UNLOCKED
+        tracker.from_today_only()._entries[now] = ScreenState.LOCKED
+        tracker.from_today_only()._entries[minute_later_10] = ScreenState.UNLOCKED
+        tracker.from_today_only()._entries[hour_later_1] = ScreenState.LOCKED
 
-        filter_10 = tracker.today().filter(
+        filter_10 = tracker.from_today_only().filter(
             state=ScreenState.LOCKED,
         )
         self.assertEqual({
@@ -378,7 +412,7 @@ class TestTracker(unittest.TestCase):
             hour_later_1: ScreenState.LOCKED,
         }, dict(filter_10))
 
-        filter_20 = tracker.today().filter(
+        filter_20 = tracker.from_today_only().filter(
             start=now,
         )
         self.assertEqual({
@@ -387,7 +421,7 @@ class TestTracker(unittest.TestCase):
             hour_later_1: ScreenState.LOCKED,
         }, dict(filter_20))
 
-        filter_21 = tracker.today().filter(
+        filter_21 = tracker.from_today_only().filter(
             start=now.add(minutes=1),
         )
         self.assertEqual({
@@ -395,7 +429,7 @@ class TestTracker(unittest.TestCase):
             hour_later_1: ScreenState.LOCKED,
         }, dict(filter_21))
 
-        filter_30 = tracker.today().filter(
+        filter_30 = tracker.from_today_only().filter(
             end=now,
         )
         self.assertEqual({
@@ -404,7 +438,7 @@ class TestTracker(unittest.TestCase):
             now: ScreenState.LOCKED,
         }, dict(filter_30))
 
-        filter_31 = tracker.today().filter(
+        filter_31 = tracker.from_today_only().filter(
             end=now.subtract(minutes=1),
         )
         self.assertEqual({
@@ -422,11 +456,11 @@ class TestTracker(unittest.TestCase):
         minute_earlier_10 = now.subtract(minutes=10)
         hour_later_1 = now.add(hours=1)
         hour_earlier_1 = now.subtract(hours=1)
-        tracker1.today()._entries[hour_earlier_1] = ScreenState.LOCKED
-        tracker1.today()._entries[minute_earlier_10] = ScreenState.UNLOCKED
-        tracker1.today()._entries[now] = ScreenState.LOCKED
-        tracker1.today()._entries[minute_later_10] = ScreenState.UNLOCKED
-        tracker1.today()._entries[hour_later_1] = ScreenState.LOCKED
+        tracker1.from_today_only()._entries[hour_earlier_1] = ScreenState.LOCKED
+        tracker1.from_today_only()._entries[minute_earlier_10] = ScreenState.UNLOCKED
+        tracker1.from_today_only()._entries[now] = ScreenState.LOCKED
+        tracker1.from_today_only()._entries[minute_later_10] = ScreenState.UNLOCKED
+        tracker1.from_today_only()._entries[hour_later_1] = ScreenState.LOCKED
         tracker1.save()
 
         tracker2 = _Tracker(store_tracking=True, cache_file=cache_file)
