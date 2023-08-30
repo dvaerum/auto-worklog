@@ -227,10 +227,11 @@ class Break(NamedTuple):
 LUNCH_BREAK_START_DT = pendulum.now().replace(hour=11, minute=15, second=0, microsecond=0)
 LUNCH_BREAK_END_DT = pendulum.now().replace(hour=13, minute=45, second=0, microsecond=0)
 LUNCH_BREAK_MIN_DURATION = pendulum.duration(hours=0, minutes=15, seconds=0, microseconds=0)
+LUNCH_BREAK_CANCELED = []
 
 
 def check_for_lunch_break_when_unlocking() -> None:
-    global _AUTO_ANSWER
+    global _AUTO_ANSWER, LUNCH_BREAK_CANCELED
     toggl_handler = TogglHandler()
     notifications = Notifications()
 
@@ -333,15 +334,29 @@ def check_for_lunch_break_when_unlocking() -> None:
 
         if tmp_lunch_breaks.__len__() == 1 and AutoAnswer.lunch_break in _AUTO_ANSWER:
             lunch_breaks[-1] = tmp_lunch_breaks[0]
-            lunch_break(-1, 3)
+
+            if lunch_breaks[-1] in LUNCH_BREAK_CANCELED:
+                return
+
+            def launch_break_cancel(_msg_id, action_id):
+                global LUNCH_BREAK_CANCELED
+
+                if action_id == 3:
+                    LUNCH_BREAK_CANCELED.append(lunch_breaks[-1])
+
+                else:
+                    lunch_break(-1, 3)
+
             notifications.send_notification(
                 title='Lunch break (Updated)',
                 message="You have had lunch break which you did not register, but I have done it for you 😉 "
                         "The lunch break was {} min, start at {}".format(
                             tmp_lunch_breaks[0].period.in_minutes(),
                             tmp_lunch_breaks[0].start.format('HH:mm'),
-                ),
-                timeout_sec=_TIMEOUT_INFO_MSG_SEC,
+                        ),
+                actions=["Cancel"],
+                action_callback_function=launch_break_cancel,
+                timeout_sec=_TIMEOUT_REPLY_MSG_SEC,
             )
 
         else:
