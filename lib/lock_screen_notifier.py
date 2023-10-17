@@ -41,7 +41,7 @@ class _LockScreenNotifier:
             signal_name='ActiveChanged'
         )
 
-        self._thread = threading.Thread(target=self._glib_loop.run)
+        self._thread = threading.Thread(target=self._glib_loop.run, daemon=True)
         self._thread.start()
 
     def subscribe_to_lock_notification(self, func_: Callable[[], None]) -> None:

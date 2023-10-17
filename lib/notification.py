@@ -34,6 +34,9 @@ class _Notifications:
     _session_bus: dbus.SessionBus
     _thread: threading.Thread
 
+    dbus_obj: dbus.SessionBus
+    dbus_interface_obj: dbus.Interface
+
     bus_service = "org.freedesktop.Notifications"
     bus_path = "/org/freedesktop/Notifications"
     bus_interface = "org.freedesktop.Notifications"
@@ -45,6 +48,10 @@ class _Notifications:
         self._dismissed_msg_ids = set()
 
         self._glib_loop = GLib.MainLoop()
+
+        self.connect()
+
+    def connect(self) -> None:
         self._session_bus = dbus.SessionBus()
 
         self._session_bus.add_signal_receiver(
@@ -55,7 +62,7 @@ class _Notifications:
             signal_name='NotificationClosed'
         )
 
-        self._thread = threading.Thread(name=__name__, target=self._glib_loop.run)
+        self._thread = threading.Thread(name=__name__, target=self._glib_loop.run, daemon=True)
         self._thread.start()
 
         self.dbus_obj = dbus.SessionBus().get_object(
@@ -134,18 +141,28 @@ class _Notifications:
 
         else:
             for index, action in enumerate(actions):
-                msg_id = self.dbus_interface_obj.Notify(
-                    notify_app_name + f" ({index + 1}/{actions.__len__()})" if actions.__len__() > 1 else "",
-                    notify_replace_id,
-                    notify_app_icon,
-                    notify_summary,
-                    notify_body,
-                    notify_actions + [action],
-                    notify_hints,
-                    notify_timeout,
-                )
-                msg_id = int(msg_id)
-                collect_all_msg_ids.add(msg_id)
+                while True:
+                    try:
+                        msg_id = self.dbus_interface_obj.Notify(
+                            notify_app_name + f" ({index + 1}/{actions.__len__()})" if actions.__len__() > 1 else "",
+                            notify_replace_id,
+                            notify_app_icon,
+                            notify_summary,
+                            notify_body,
+                            notify_actions + [action],
+                            notify_hints,
+                            notify_timeout,
+                        )
+                        msg_id = int(msg_id)
+                        collect_all_msg_ids.add(msg_id)
+                        break
+                    except dbus.exceptions.DBusException as err:
+                        print("{} [=] Notification - send_notification - error msg: {}".format(
+                            pendulum.now().to_datetime_string(),
+                            err,
+                        ))
+                        sleep(5)
+                        self.connect()
 
                 if group_name is not None:
                     self._grouped_msg_ids.setdefault(group_name, set())

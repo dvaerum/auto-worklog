@@ -3,6 +3,7 @@ from asyncio import sleep
 from typing import Optional, List
 
 import pendulum
+import requests
 
 # noinspection PyUnresolvedReferences
 from toggl import api, utils, exceptions
@@ -58,7 +59,11 @@ class _TogglHandler:
             ]
             return entries
 
-        self._entries = api.TimeEntry.objects.filter(start=_date)
+        try:
+            self._entries = api.TimeEntry.objects.filter(start=_date)
+        except requests.exceptions.ConnectionError as err:
+            exit(1)
+
         return self._entries
 
     def get_entries_started_today(self) -> List[api.TimeEntry]:

@@ -1,5 +1,5 @@
 from enum import IntFlag
-from typing import NamedTuple, Optional, Any
+from typing import NamedTuple, Optional, Any, List
 
 import pendulum
 
@@ -211,9 +211,9 @@ def unlock() -> None:
 
 
 class Break(NamedTuple):
-    start: pendulum.datetime
-    end: pendulum.datetime
-    period: pendulum.period
+    start: pendulum.DateTime
+    end: pendulum.DateTime
+    period: pendulum.Period
     toggl_entry: Optional[Any] = None
 
     def to_str(self) -> str:
@@ -224,14 +224,17 @@ class Break(NamedTuple):
         )
 
 
-LUNCH_BREAK_START_DT = pendulum.now().replace(hour=11, minute=15, second=0, microsecond=0)
-LUNCH_BREAK_END_DT = pendulum.now().replace(hour=13, minute=45, second=0, microsecond=0)
 LUNCH_BREAK_MIN_DURATION = pendulum.duration(hours=0, minutes=15, seconds=0, microseconds=0)
-LUNCH_BREAK_CANCELED = []
+LUNCH_BREAK_REGISTERED: Optional[Break] = None
+LUNCH_BREAK_CANCELED: List[Break] = []
 
 
 def check_for_lunch_break_when_unlocking() -> None:
     global _AUTO_ANSWER, LUNCH_BREAK_CANCELED
+
+    lunch_break_start_dt = pendulum.now().replace(hour=11, minute=15, second=0, microsecond=0)
+    lunch_break_end_dt = pendulum.now().replace(hour=13, minute=45, second=0, microsecond=0)
+
     toggl_handler = TogglHandler()
     notifications = Notifications()
 
@@ -245,8 +248,8 @@ def check_for_lunch_break_when_unlocking() -> None:
 
     tracker = Tracker()
     entries = tracker.from_today_only().filter(
-        start=LUNCH_BREAK_START_DT,
-        end=LUNCH_BREAK_END_DT,
+        start=lunch_break_start_dt,
+        end=lunch_break_end_dt,
     )
 
     breaks = []
@@ -270,7 +273,7 @@ def check_for_lunch_break_when_unlocking() -> None:
             start = None
             continue
 
-    tmp_lunch_breaks = []
+    tmp_lunch_breaks: List[Break] = []
     for break_ in sorted(breaks, key=lambda x: x.period, reverse=True):
         if break_.start < current_entry.start:
             continue
@@ -282,7 +285,7 @@ def check_for_lunch_break_when_unlocking() -> None:
         _toggl_entries = toggl_handler.get_entries_started_today()
         toggl_entries = [
             toggl_entry for toggl_entry in _toggl_entries
-            if toggl_entry.stop and LUNCH_BREAK_START_DT < toggl_entry.stop < LUNCH_BREAK_END_DT
+            if toggl_entry.stop and lunch_break_start_dt < toggl_entry.stop < lunch_break_end_dt
         ]
 
         for toggl_entry in toggl_entries:
@@ -336,6 +339,9 @@ def check_for_lunch_break_when_unlocking() -> None:
             lunch_breaks[-1] = tmp_lunch_breaks[0]
 
             if lunch_breaks[-1] in LUNCH_BREAK_CANCELED:
+                return
+
+            if LUNCH_BREAK_REGISTERED and LUNCH_BREAK_REGISTERED.start.date() == pendulum.now().date():
                 return
 
             def launch_break_cancel(_msg_id, action_id):
