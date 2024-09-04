@@ -60,7 +60,7 @@ class _TogglHandler:
             return entries
 
         try:
-            self._entries = api.TimeEntry.objects.filter(start=_date)
+            self._entries = api.TimeEntry.objects.filter(start=_date, stop=_date.now())
         except requests.exceptions.ConnectionError as err:
             exit(1)
 
