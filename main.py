@@ -1,7 +1,7 @@
 import signal
 from argparse import ArgumentParser
 from os import environ
-
+import threading
 import pendulum
 
 from lib.lock_screen_notifier import LockScreenNotifier
@@ -26,8 +26,14 @@ def handler(signum, _frame):
     LockScreenNotifier().quit()
 
 
+def print_current_threads(signum, _frame):
+    for thread in threading.enumerate():
+        print(f"name: {thread.name} - running: {thread.is_alive()}")
+
+
 signal.signal(signal.SIGINT, handler)
 signal.signal(signal.SIGTERM, handler)
+signal.signal(signal.SIGUSR2, print_current_threads)
 
 
 def main():

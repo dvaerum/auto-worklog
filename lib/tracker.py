@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 from json import load as json_load, dump as json_dump
 from pathlib import Path
@@ -133,6 +134,9 @@ class Day:
     def keys(self):
         return self._entries.keys()
 
+    def merge(self, day: Day):
+        self._entries = {**self._entries, **day._entries}
+
 
 class _ManyDays(Day):
     def __init__(self, entries: SortedDict[pendulum.DateTime, ScreenState]) -> None:
@@ -209,6 +213,13 @@ class Days:
     def __iter__(self):
         return iter(self._days)
 
+    def merge(self, days: Days) -> None:
+        for date, day in days.items():
+            if date in self._days:
+                self._days[date].merge(day)
+            else:
+                self._days[date] = day
+
     def keys(self) -> SortedKeysView[pendulum.Date]:
         # noinspection PyTypeChecker
         return self._days.keys()
@@ -235,7 +246,7 @@ class _Tracker:
 
         if cache_file is None:
             self.file_name = 'tracker.json'
-            self.folder_path = Path.home().joinpath('.cache')
+            self.folder_path = Path.home().joinpath('.cache').joinpath('auto-worklog')
             self.file_path = self.folder_path.joinpath(self.file_name)
         else:
             self.file_name = cache_file.name
@@ -244,18 +255,7 @@ class _Tracker:
 
         self._store_tracking = store_tracking
         if self._store_tracking:
-            if not self.folder_path.exists():
-                self.folder_path.mkdir(parents=True)
-
-            if not self.file_path.exists():
-                self.file_path.touch()
-                with open(self.file_path, 'w') as file:
-                    self.save()
-
-            else:
-                with open(self.file_path, 'r') as file:
-                    raw_data = json_load(file)
-                    self._days = Days(raw_data)
+            self._days = self._load()
 
     def trigger_screen_locked(self) -> None:
         self._trigger_screen_state(ScreenState.LOCKED)
@@ -272,8 +272,31 @@ class _Tracker:
 
         self.save()
 
+    def _load(self) -> Days:
+        if self._store_tracking:
+            if not self.folder_path.exists():
+                return Days()
+
+            if not self.file_path.exists():
+                return Days()
+
+            with open(self.file_path, 'r') as file:
+                raw_data = json_load(file)
+                days = Days(raw_data)
+                return days
+
+        return Days()
+
     def save(self) -> None:
         if self._store_tracking:
+            days = self._load()
+
+            days.merge(self._days)
+            self._days = days
+
+            if not self.folder_path.exists():
+                self.folder_path.mkdir(parents=True)
+
             with open(self.file_path, 'w') as file:
                 json_dump(self._days.dump(), file, indent=4, default=_json_dump_default)
 
@@ -448,7 +471,8 @@ class TestTracker(unittest.TestCase):
 
     def test_filter_cache_file(self) -> None:
         cache_file = Path('/tmp/test_cache.json')
-        os.remove(cache_file)
+        if cache_file.exists():
+            os.remove(cache_file)
         tracker1 = _Tracker(store_tracking=True, cache_file=cache_file)
 
         now = pendulum_now()

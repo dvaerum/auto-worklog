@@ -8,6 +8,7 @@ import requests
 # noinspection PyUnresolvedReferences
 from toggl import api, utils, exceptions
 
+from lib.notification import Notifications
 
 _TOGGL_HANDLER = None
 
@@ -163,7 +164,20 @@ class _TogglHandler:
             _run = True
             while _run:
                 try:
-                    current_entry.stop_and_save(stop_time)
+                    if current_entry.start > stop_time:
+                        Notifications().send_notification(
+                            title="Error: Stop time < Start time",
+                            message="The stop time cannot be less then the start time, "
+                                    "something went wrong and your need to manually set the stop time "
+                                    "of the current Toggl entry"
+                        )
+                    else:
+                        current_entry.stop_and_save(stop_time)
+                        print("{} [=] Logic - Stopped time entry ({}), at {}".format(
+                            pendulum.now().to_datetime_string(),
+                            current_entry.id,
+                            current_entry.stop.to_datetime_string(),
+                        ))
                     _run = False
                 except exceptions.TogglServerException as err:
                     print("{} [=] Toggl (stop_current_entry) - error msg: {}".format(

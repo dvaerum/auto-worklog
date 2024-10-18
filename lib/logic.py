@@ -7,6 +7,8 @@ from .tracker import Tracker, ScreenState
 from .notification import Notifications
 from .toggl_handler import TogglHandler
 
+_LOOP_RETRY = 5
+
 _TIMEOUT_INFO_MSG_SEC = 10
 _TIMEOUT_REPLY_MSG_SEC = 20
 
@@ -36,12 +38,7 @@ def _if_yes_then_stop_toggl(msg_id: int, action_id: int) -> None:
             raise Exception("No entry found, cannot stop Toggle, implement handler for this case!!!")
 
         toggl_handler = TogglHandler()
-        time_entry = toggl_handler.stop_current_entry(entry.datetime)
-        print("{} [=] Logic - Stopped time entry ({}), at {}".format(
-            pendulum.now().to_datetime_string(),
-            time_entry.id,
-            time_entry.stop.to_datetime_string(),
-        ))
+        toggl_handler.stop_current_entry(entry.datetime)
 
 
 def _if_yes_then_start_toggl(msg_id: int, action_id: int) -> None:
@@ -213,7 +210,7 @@ def unlock() -> None:
 class Break(NamedTuple):
     start: pendulum.DateTime
     end: pendulum.DateTime
-    period: pendulum.Period
+    period: pendulum.Interval
     toggl_entry: Optional[Any] = None
 
     def to_str(self) -> str:
@@ -232,18 +229,18 @@ LUNCH_BREAK_CANCELED: List[Break] = []
 def check_for_lunch_break_when_unlocking() -> None:
     global _AUTO_ANSWER, LUNCH_BREAK_CANCELED
 
-    lunch_break_start_dt = pendulum.now().replace(hour=11, minute=15, second=0, microsecond=0)
+    lunch_break_start_dt = pendulum.now().replace(hour=11, minute=00, second=0, microsecond=0)
     lunch_break_end_dt = pendulum.now().replace(hour=13, minute=45, second=0, microsecond=0)
 
     toggl_handler = TogglHandler()
     notifications = Notifications()
 
     # Check if there is a change that I have come back from lunch break
-    if pendulum.now() < pendulum.now().replace(hour=11, minute=50, second=0, microsecond=0):
+    if pendulum.now() < pendulum.now().replace(hour=11, minute=40, second=0, microsecond=0):
         return
 
     current_entry = toggl_handler.get_current_entry()
-    if toggl_handler.get_current_entry() is None:
+    if current_entry is None:
         return
 
     tracker = Tracker()
@@ -342,6 +339,10 @@ def check_for_lunch_break_when_unlocking() -> None:
                 return
 
             if LUNCH_BREAK_REGISTERED and LUNCH_BREAK_REGISTERED.start.date() == pendulum.now().date():
+                return
+
+            current_entry = toggl_handler.get_current_entry()
+            if (pendulum.now() - current_entry.start).in_seconds() < 60:
                 return
 
             def launch_break_cancel(_msg_id, action_id):
