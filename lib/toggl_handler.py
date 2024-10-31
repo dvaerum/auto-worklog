@@ -84,7 +84,10 @@ class _TogglHandler:
             ]
             return entries
 
-        _entries = api.TimeEntry.objects.filter(stop=date)
+        _entries = api.TimeEntry.objects.filter(
+            start=pendulum.now().subtract(days=9),
+            stop=date
+        )
         entries = [
             entry for entry in _entries
             if hasattr(entry, "stop") and entry.stop and entry.stop.date() == _date.date()
