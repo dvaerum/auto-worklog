@@ -12,6 +12,9 @@ _LOOP_RETRY = 5
 _TIMEOUT_INFO_MSG_SEC = 10
 _TIMEOUT_REPLY_MSG_SEC = 20
 
+_DO_NOT_INCLUDE_BREAKS_LASTING_LONGER_THAN = pendulum.duration(hours=0, minutes=35, seconds=0, microseconds=0)
+_DO_NOT_INCLUDE_BREAKS_LASTING_SHORTER_THAN = pendulum.duration(hours=0, minutes=10, seconds=0, microseconds=0)
+
 
 class AutoAnswer(IntFlag):
     disabled = 0
@@ -266,6 +269,10 @@ def check_for_lunch_break_when_unlocking() -> None:
                 end=datetime,
                 period=_break_period,
             )
+            if break_.period > _DO_NOT_INCLUDE_BREAKS_LASTING_LONGER_THAN:
+                continue
+            if break_.period < _DO_NOT_INCLUDE_BREAKS_LASTING_SHORTER_THAN:
+                continue
             breaks.append(break_)
             start = None
             continue
