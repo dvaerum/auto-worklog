@@ -4,6 +4,7 @@ from json import load as json_load, dump as json_dump
 from pathlib import Path
 from typing import Optional, Union, NamedTuple, List
 import unittest
+from socket import gethostname
 
 import pendulum
 from sortedcontainers import SortedDict, SortedKeysView, SortedValuesView, SortedItemsView
@@ -135,7 +136,7 @@ class Day:
         return self._entries.keys()
 
     def merge(self, day: Day):
-        self._entries = {**self._entries, **day._entries}
+        self._entries.update(day._entries)
 
 
 class _ManyDays(Day):
@@ -191,6 +192,13 @@ class Days:
 
         self._days[date] = day
 
+    def add_adds(self, days: Days):
+        for date, day in days.items():
+            if date in self._days:
+                self._days[date].merge(day)
+            else:
+                self._days[date] = day
+
     def count_days(self) -> int:
         return len(self._days)
 
@@ -240,12 +248,14 @@ class _Tracker:
     file_path: Path
 
     _days: Days
+    _only_local_days: Days
 
     def __init__(self, store_tracking: bool = True, cache_file: Path = None) -> None:
         self._days = Days()
+        self._only_local_days = Days()
 
         if cache_file is None:
-            self.file_name = 'tracker.json'
+            self.file_name = f'{gethostname()}.json'
             self.folder_path = Path.home().joinpath('.cache').joinpath('auto-worklog')
             self.file_path = self.folder_path.joinpath(self.file_name)
         else:
@@ -256,6 +266,7 @@ class _Tracker:
         self._store_tracking = store_tracking
         if self._store_tracking:
             self._days = self._load()
+            self._only_local_days = self._load(only_local=True)
 
     def trigger_screen_locked(self) -> None:
         self._trigger_screen_state(ScreenState.LOCKED)
@@ -268,37 +279,52 @@ class _Tracker:
             pendulum.now().to_datetime_string(),
             screen_state.name,
         ))
-        self._days.today()[pendulum_now()] = screen_state
+        self._only_local_days.today()[pendulum_now()] = screen_state
 
         self.save()
 
-    def _load(self) -> Days:
+    def _load(self, only_local: bool = False) -> Days:
         if self._store_tracking:
             if not self.folder_path.exists():
                 return Days()
 
-            if not self.file_path.exists():
-                return Days()
+            days = Days()
+            if self.file_path.exists():
+                with open(self.file_path, 'r') as file_obj:
+                    raw_data = json_load(file_obj)
+                    days = Days(raw_data)
 
-            with open(self.file_path, 'r') as file:
-                raw_data = json_load(file)
-                days = Days(raw_data)
+            if only_local:
                 return days
+
+            for tracker_from_another_host in self.folder_path.glob('*.json'):
+                if tracker_from_another_host.name == self.file_name:
+                    continue
+
+                days_from_another_host = None
+                try:
+                    with open(tracker_from_another_host, 'r') as file:
+                        raw_data = json_load(file)
+                        days_from_another_host = Days(raw_data)
+                except Exception as e:
+                    print(f'Error loading file {tracker_from_another_host}: {e}')
+                    continue
+                days.add_adds(days_from_another_host)
+
+            return days
 
         return Days()
 
     def save(self) -> None:
         if self._store_tracking:
-            days = self._load()
-
-            days.merge(self._days)
-            self._days = days
-
             if not self.folder_path.exists():
                 self.folder_path.mkdir(parents=True)
 
             with open(self.file_path, 'w') as file:
-                json_dump(self._days.dump(), file, indent=4, default=_json_dump_default)
+                json_dump(self._only_local_days.dump(), file, indent=4, default=_json_dump_default)
+
+            days = self._load()
+            self._days = days
 
     def from_today_only(self) -> Day:
         return self._days.today()
