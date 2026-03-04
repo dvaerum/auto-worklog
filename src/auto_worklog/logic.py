@@ -85,18 +85,26 @@ def first_unlock_today() -> None:
     notifications = Notifications()
 
     unlock_entries = tracker.from_today_only().filter(state=ScreenState.UNLOCKED)
+    logger.debug("first_unlock_today: unlock_entries count = %d", unlock_entries.__len__())
     if unlock_entries.__len__() != 1:
+        logger.debug("first_unlock_today: skipping (not first unlock)")
         return
 
     unlock_entry = tracker.from_today_only().first_entry(ScreenState.UNLOCKED)
     if unlock_entry is None:
+        logger.debug("first_unlock_today: skipping (no unlock entry found)")
         return
 
     tracker_entry = tracker.from_yesterday_and_backwards().last_entry(ScreenState.LOCKED)
+    logger.debug("first_unlock_today: unlock=%s, last_lock_yesterday=%s",
+                 unlock_entry.datetime, tracker_entry.datetime if tracker_entry else None)
 
     current_entry = toggl_handler.get_current_entry()
+    logger.debug("first_unlock_today: current_entry=%s", 
+                 current_entry.id if current_entry else None)
     if current_entry is not None:
         if current_entry.start.date() == pendulum.today().date():
+            logger.debug("first_unlock_today: current entry started today, checking for manually stopped entries")
             time_entries = toggl_handler.get_entries_stopped_today()
 
             # Find the time entry which started the latest
@@ -108,10 +116,14 @@ def first_unlock_today() -> None:
                     earliest_stopped_time_entry = time_entry
 
             if earliest_stopped_time_entry is None:
+                logger.debug("first_unlock_today: no stopped entries found today, skipping")
                 return
 
             if earliest_stopped_time_entry.start.date() == pendulum.today().date():
+                logger.debug("first_unlock_today: earliest stopped entry started today, skipping")
                 return
+            
+            logger.debug("first_unlock_today: found entry started yesterday, stopped today manually")
 
             def _if_cancel_button_is_clicked_do_nothing(msg_id: int, action_id: int) -> None:
                 if action_id == 3:
@@ -138,7 +150,10 @@ def first_unlock_today() -> None:
             )
 
         elif current_entry.start.date() != pendulum.now().date():
+            logger.debug("first_unlock_today: current entry started %s (not today), forgot_to_stop_yesterday trigger",
+                         current_entry.start.date())
             if AutoAnswer.forgot_to_stop_yesterday in _AUTO_ANSWER:
+                logger.debug("first_unlock_today: auto-answering forgot_to_stop_yesterday")
                 _if_yes_then_stop_toggl(0, 3)
                 notifications.send_notification(
                     title='Forgot to stop Toggl (Updated)',
@@ -150,6 +165,7 @@ def first_unlock_today() -> None:
                 )
 
             else:
+                logger.debug("first_unlock_today: asking user about forgot_to_stop_yesterday")
                 message_ids = notifications.send_notification(
                     title='First unlock of the day',
                     message=f'You forgot to stop Toggl yesterday, do you want to stop it now?',
@@ -162,7 +178,9 @@ def first_unlock_today() -> None:
             current_entry = toggl_handler.get_current_entry()
 
     if current_entry is None:
+        logger.debug("first_unlock_today: no current entry, first_unlock_today trigger")
         if AutoAnswer.first_unlock_today in _AUTO_ANSWER:
+            logger.debug("first_unlock_today: auto-answering first_unlock_today")
             _if_yes_then_start_toggl_for_the_1st_time_today(0, 3)
             notifications.send_notification(
                 title='First unlock of the day (Updated)',
@@ -171,6 +189,7 @@ def first_unlock_today() -> None:
             )
 
         else:
+            logger.debug("first_unlock_today: asking user about first_unlock_today")
             notifications.send_notification(
                 title='First unlock of the day',
                 message=f'Do you want to start Toggl',
@@ -178,6 +197,8 @@ def first_unlock_today() -> None:
                 action_callback_function=_if_yes_then_start_toggl_for_the_1st_time_today,
                 timeout_sec=_TIMEOUT_REPLY_MSG_SEC,
             )
+    else:
+        logger.debug("first_unlock_today: current entry exists (%s), no action needed", current_entry.id)
 
 
 def unlock() -> None:
@@ -185,11 +206,17 @@ def unlock() -> None:
     toggl_handler = TogglHandler()
     notifications = Notifications()
 
-    if tracker.from_today_only().filter(state=ScreenState.UNLOCKED).__len__() > 1 \
-            and toggl_handler.get_entries_started_today_count() > 0:
+    unlock_count = tracker.from_today_only().filter(state=ScreenState.UNLOCKED).__len__()
+    entries_today_count = toggl_handler.get_entries_started_today_count()
+    logger.debug("unlock: unlock_count=%d, entries_today_count=%d", unlock_count, entries_today_count)
+    
+    if unlock_count > 1 and entries_today_count > 0:
         current_entry = toggl_handler.get_current_entry()
+        logger.debug("unlock: current_entry=%s", current_entry.id if current_entry else None)
         if current_entry is None:
+            logger.debug("unlock: no current entry but entries exist today, unlock trigger")
             if AutoAnswer.unlock in _AUTO_ANSWER:
+                logger.debug("unlock: auto-answering unlock")
                 _if_yes_then_start_toggl(0, 3)
                 notifications.send_notification(
                     title='Not logging time (Updated)',
@@ -198,6 +225,7 @@ def unlock() -> None:
                 )
 
             else:
+                logger.debug("unlock: asking user about unlock")
                 notifications.send_notification(
                     title='Not logging time',
                     message=f'You are not currently logging time, do you want to?',
@@ -205,6 +233,10 @@ def unlock() -> None:
                     action_callback_function=_if_yes_then_start_toggl,
                     timeout_sec=_TIMEOUT_REPLY_MSG_SEC,
                 )
+        else:
+            logger.debug("unlock: current entry exists (%s), no action needed", current_entry.id)
+    else:
+        logger.debug("unlock: skipping (unlock_count<=1 or entries_today_count==0)")
 
 
 class Break(NamedTuple):
@@ -236,11 +268,16 @@ def check_for_lunch_break_when_unlocking() -> None:
     notifications = Notifications()
 
     # Check if there is a change that I have come back from lunch break
-    if pendulum.now() < pendulum.now().replace(hour=11, minute=40, second=0, microsecond=0):
+    now = pendulum.now()
+    logger.debug("lunch_break: current time=%s", now.format('HH:mm'))
+    if now < now.replace(hour=11, minute=40, second=0, microsecond=0):
+        logger.debug("lunch_break: skipping (before 11:40)")
         return
 
     current_entry = toggl_handler.get_current_entry()
+    logger.debug("lunch_break: current_entry=%s", current_entry.id if current_entry else None)
     if current_entry is None:
+        logger.debug("lunch_break: skipping (no current entry)")
         return
 
     tracker = Tracker()
@@ -274,12 +311,18 @@ def check_for_lunch_break_when_unlocking() -> None:
             start = None
             continue
 
+    logger.debug("lunch_break: found %d breaks in lunch window (10-35 min)", len(breaks))
+    
     tmp_lunch_breaks: List[Break] = []
     for break_ in sorted(breaks, key=lambda x: x.period, reverse=True):
         if break_.start < current_entry.start:
+            logger.debug("lunch_break: skipping break at %s (before current entry start)",
+                         break_.start.format('HH:mm'))
             continue
 
         tmp_lunch_breaks.append(break_)
+    
+    logger.debug("lunch_break: %d breaks after current_entry.start filter", len(tmp_lunch_breaks))
 
     only_handle_stop_time_for_toggl_entries = False
     if tmp_lunch_breaks.__len__() == 0:
@@ -302,6 +345,7 @@ def check_for_lunch_break_when_unlocking() -> None:
                     only_handle_stop_time_for_toggl_entries = True
 
     if tmp_lunch_breaks.__len__() >= 1:
+        logger.debug("lunch_break: %d candidate breaks found, lunch_break trigger", len(tmp_lunch_breaks))
         lunch_breaks = {}
 
         def lunch_break(msg_id, action_id):
@@ -334,14 +378,19 @@ def check_for_lunch_break_when_unlocking() -> None:
             lunch_breaks[-1] = tmp_lunch_breaks[0]
 
             if lunch_breaks[-1] in LUNCH_BREAK_CANCELED:
+                logger.debug("lunch_break: break was previously canceled, skipping")
                 return
 
             if LUNCH_BREAK_REGISTERED and LUNCH_BREAK_REGISTERED.start.date() == pendulum.now().date():
+                logger.debug("lunch_break: break already registered today, skipping")
                 return
 
             current_entry = toggl_handler.get_current_entry()
             if (pendulum.now() - current_entry.start).in_seconds() < 60:
+                logger.debug("lunch_break: current entry started <60s ago, skipping")
                 return
+            
+            logger.debug("lunch_break: auto-answering lunch_break")
 
             def launch_break_cancel(_msg_id, action_id):
                 global LUNCH_BREAK_CANCELED
@@ -365,6 +414,7 @@ def check_for_lunch_break_when_unlocking() -> None:
             )
 
         else:
+            logger.debug("lunch_break: asking user about %d lunch break options", len(tmp_lunch_breaks))
             _buttons = [break_.to_str() for break_ in tmp_lunch_breaks]
             message_ids = notifications.send_notification(
                 title='Lunch break',
@@ -377,3 +427,5 @@ def check_for_lunch_break_when_unlocking() -> None:
 
             for index, _msg_id in enumerate(sorted(message_ids)):
                 lunch_breaks[_msg_id] = tmp_lunch_breaks[index]
+    else:
+        logger.debug("lunch_break: no candidate breaks found, skipping")

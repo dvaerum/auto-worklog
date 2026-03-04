@@ -61,9 +61,12 @@ class _TogglHandler:
 
     def get_current_entry(self) -> Optional[api.TimeEntry]:
         if self.get_token() is None:
+            logger.debug("get_current_entry: offline mode, returning cached entry")
             return self._current_entry
 
         self._current_entry = api.TimeEntry.objects.current()
+        logger.debug("get_current_entry: fetched from API, entry=%s", 
+                     self._current_entry.id if self._current_entry else None)
 
         if self._current_entry not in self._entries:
             self._entries.append(self._current_entry)
@@ -134,6 +137,9 @@ class _TogglHandler:
         else:
             start = start_time
 
+        logger.debug("start_entry: description='%s', start=%s, offline=%s", 
+                     description, start.to_datetime_string(), self.get_token() is None)
+
         if self.get_token() is None:
             stop = pendulum.from_timestamp(0)
         else:
@@ -147,6 +153,7 @@ class _TogglHandler:
                 stop=stop,
             )
             current_entry.id = self._get_id()
+            logger.debug("start_entry: created offline entry with id=%s", current_entry.id)
         else:
             _run = True
             while _run:
@@ -155,6 +162,7 @@ class _TogglHandler:
                         description=description,
                         start=start,
                     )
+                    logger.debug("start_entry: created API entry with id=%s", current_entry.id)
                     _run = False
                 except exceptions.TogglServerException as err:
                     logger.error("Toggl (start_entry) - error: %s", err)
@@ -171,10 +179,14 @@ class _TogglHandler:
             stop_time = pendulum.now()
 
         current_entry = self.get_current_entry()
+        logger.debug("stop_current_entry: entry=%s, stop=%s, offline=%s",
+                     current_entry.id if current_entry else None,
+                     stop_time.to_datetime_string(), self.get_token() is None)
 
         if self.get_token() is None:
             current_entry.stop = stop_time
             self._current_entry = None
+            logger.debug("stop_current_entry: stopped offline entry")
         else:
             # Check for offline id and remove it if it exists
             if current_entry.id < 0:

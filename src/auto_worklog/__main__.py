@@ -107,6 +107,9 @@ def main():
         file_level=args.log_file_level,
     )
 
+    logger.debug("Startup: console_level=%s, log_file=%s, file_level=%s",
+                 args.log_level, args.log_file or "disabled", args.log_file_level)
+
     if args.auto_answer:
         auto_answer = l.AutoAnswer(sum([l.AutoAnswer[x] for x in args.auto_answer]))
         logger.info("Auto answer: %r", auto_answer)
@@ -116,6 +119,7 @@ def main():
 
     token = _resolve_token(args)
     if token:
+        logger.debug("Startup: Toggl token provided, validating...")
         toggl = TogglHandler(token=token)
         if toggl.validate_token():
             logger.info("Toggl token validated")
@@ -125,6 +129,8 @@ def main():
                 title="Auto Worklog",
                 message="Toggl token is invalid or API is unreachable. Time entries will not be synced.",
             )
+    else:
+        logger.debug("Startup: No Toggl token provided, running in offline mode")
 
     tracker = Tracker()
 

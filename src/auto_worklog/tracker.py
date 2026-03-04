@@ -285,6 +285,7 @@ class _Tracker:
     def _load(self, only_local: bool = False) -> Days:
         if self._store_tracking:
             if not self.folder_path.exists():
+                logger.debug("_load: cache folder does not exist, returning empty Days")
                 return Days()
 
             days = Days()
@@ -292,19 +293,23 @@ class _Tracker:
                 with open(self.file_path, 'r') as file_obj:
                     raw_data = json_load(file_obj)
                     days = Days(raw_data)
+                    logger.debug("_load: loaded %d days from %s", days.count_days(), self.file_path.name)
 
             if only_local:
                 return days
 
-            for tracker_from_another_host in self.folder_path.glob('*.json'):
-                if tracker_from_another_host.name == self.file_name:
-                    continue
-
+            # Merge data from other hosts
+            other_hosts = [p for p in self.folder_path.glob('*.json') if p.name != self.file_name]
+            logger.debug("_load: merging data from %d other host(s)", len(other_hosts))
+            
+            for tracker_from_another_host in other_hosts:
                 days_from_another_host = None
                 try:
                     with open(tracker_from_another_host, 'r') as file:
                         raw_data = json_load(file)
                         days_from_another_host = Days(raw_data)
+                        logger.debug("_load: merged %d days from %s", 
+                                     days_from_another_host.count_days(), tracker_from_another_host.name)
                 except Exception as e:
                     logger.warning("Error loading file %s: %s", tracker_from_another_host, e)
                     continue
@@ -317,8 +322,10 @@ class _Tracker:
     def save(self) -> None:
         if self._store_tracking:
             if not self.folder_path.exists():
+                logger.debug("save: creating cache folder %s", self.folder_path)
                 self.folder_path.mkdir(parents=True)
 
+            logger.debug("save: writing %d days to %s", self._only_local_days.count_days(), self.file_path.name)
             with open(self.file_path, 'w') as file:
                 json_dump(self._only_local_days.dump(), file, indent=4, default=_json_dump_default)
 
