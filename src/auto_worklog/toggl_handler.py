@@ -1,3 +1,4 @@
+import logging
 import unittest
 from asyncio import sleep
 from typing import Optional, List
@@ -8,7 +9,9 @@ import requests
 # noinspection PyUnresolvedReferences
 from toggl import api, utils, exceptions
 
-from lib.notification import Notifications
+from .notification import Notifications
+
+logger = logging.getLogger(__name__)
 
 _TOGGL_HANDLER = None
 
@@ -33,6 +36,22 @@ class _TogglHandler:
 
         self._current_entry = None
         self._entries = []
+
+    def validate_token(self) -> bool:
+        """Validate the Toggl API token by making a lightweight API call."""
+        token = self.get_token()
+        if token is None:
+            return False
+
+        try:
+            response = requests.get(
+                "https://api.track.toggl.com/api/v9/me",
+                auth=(token, "api_token"),
+                timeout=10,
+            )
+            return response.status_code == 200
+        except requests.exceptions.RequestException:
+            return False
 
     def set_token(self, token: str) -> None:
         self._config.api_token = token
@@ -138,10 +157,7 @@ class _TogglHandler:
                     )
                     _run = False
                 except exceptions.TogglServerException as err:
-                    print("{} [=] Toggl (start_entry) - error msg: {}".format(
-                        pendulum.now().to_datetime_string(),
-                        err,
-                    ))
+                    logger.error("Toggl (start_entry) - error: %s", err)
                     sleep(5)
 
         self._current_entry = current_entry
@@ -176,17 +192,12 @@ class _TogglHandler:
                         )
                     else:
                         current_entry.stop_and_save(stop_time)
-                        print("{} [=] Logic - Stopped time entry ({}), at {}".format(
-                            pendulum.now().to_datetime_string(),
-                            current_entry.id,
-                            current_entry.stop.to_datetime_string(),
-                        ))
+                        logger.info("Stopped time entry (%s), at %s",
+                                    current_entry.id,
+                                    current_entry.stop.to_datetime_string())
                     _run = False
                 except exceptions.TogglServerException as err:
-                    print("{} [=] Toggl (stop_current_entry) - error msg: {}".format(
-                        pendulum.now().to_datetime_string(),
-                        err,
-                    ))
+                    logger.error("Toggl (stop_current_entry) - error: %s", err)
                     sleep(5)
 
         return current_entry
@@ -248,4 +259,3 @@ class TestTogglHandler(unittest.TestCase):
         self.assertIsNone(toggl_handler._current_entry)
 
         self.assertIn(stopped_entry, toggl_handler.get_entries_started_today())
-

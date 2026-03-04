@@ -1,0 +1,6 @@
+dbus-python
+toggl-cli
+pendulum
+sortedcontainers
+PyGObject
+requests

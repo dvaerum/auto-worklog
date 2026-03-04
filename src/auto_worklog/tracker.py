@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 import os
 from json import load as json_load, dump as json_dump
 from pathlib import Path
@@ -11,6 +12,7 @@ from sortedcontainers import SortedDict, SortedKeysView, SortedValuesView, Sorte
 
 from .misc import ScreenState
 
+logger = logging.getLogger(__name__)
 
 _TRACKER = None
 _LOAD_DAYS_BACK: int = 35
@@ -275,10 +277,7 @@ class _Tracker:
         self._trigger_screen_state(ScreenState.UNLOCKED)
 
     def _trigger_screen_state(self, screen_state: ScreenState) -> None:
-        print('{} [=] Screen {}'.format(
-            pendulum.now().to_datetime_string(),
-            screen_state.name,
-        ))
+        logger.info("Screen %s", screen_state.name)
         self._only_local_days.today()[pendulum_now()] = screen_state
 
         self.save()
@@ -307,7 +306,7 @@ class _Tracker:
                         raw_data = json_load(file)
                         days_from_another_host = Days(raw_data)
                 except Exception as e:
-                    print(f'Error loading file {tracker_from_another_host}: {e}')
+                    logger.warning("Error loading file %s: %s", tracker_from_another_host, e)
                     continue
                 days.add_adds(days_from_another_host)
 

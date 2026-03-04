@@ -1,3 +1,4 @@
+import logging
 from enum import IntFlag
 from typing import NamedTuple, Optional, Any, List
 
@@ -6,6 +7,8 @@ import pendulum
 from .tracker import Tracker, ScreenState
 from .notification import Notifications
 from .toggl_handler import TogglHandler
+
+logger = logging.getLogger(__name__)
 
 _LOOP_RETRY = 5
 
@@ -56,11 +59,8 @@ def _if_yes_then_start_toggl(msg_id: int, action_id: int) -> None:
             description="Working",
             start_time=entry.datetime,
         )
-        print("{} [=] Logic - Started time entry ({}), at {}".format(
-            pendulum.now().to_datetime_string(),
-            time_entry.id,
-            time_entry.start.to_datetime_string(),
-        ))
+        logger.info("Started time entry (%s), at %s",
+                     time_entry.id, time_entry.start.to_datetime_string())
 
 
 def _if_yes_then_start_toggl_for_the_1st_time_today(msg_id: int, action_id: int) -> None:
@@ -75,11 +75,8 @@ def _if_yes_then_start_toggl_for_the_1st_time_today(msg_id: int, action_id: int)
             description="Working",
             start_time=entry.datetime.subtract(minutes=5),
         )
-        print("{} [=] Logic - Started time entry ({}), at {}".format(
-            pendulum.now().to_datetime_string(),
-            time_entry.id,
-            time_entry.start.to_datetime_string(),
-        ))
+        logger.info("Started time entry (%s), at %s",
+                     time_entry.id, time_entry.start.to_datetime_string())
 
 
 def first_unlock_today() -> None:
@@ -145,7 +142,7 @@ def first_unlock_today() -> None:
                 _if_yes_then_stop_toggl(0, 3)
                 notifications.send_notification(
                     title='Forgot to stop Toggl (Updated)',
-                    message='You forgot to stop Toggl {week_day} ({days_passed}), so I stopped it for you 😉'.format(
+                    message='You forgot to stop Toggl {week_day} ({days_passed}), so I stopped it for you'.format(
                         week_day=tracker_entry.datetime.format("dddd"),
                         days_passed=tracker_entry.datetime.diff_for_humans(),
                     ),
@@ -169,7 +166,7 @@ def first_unlock_today() -> None:
             _if_yes_then_start_toggl_for_the_1st_time_today(0, 3)
             notifications.send_notification(
                 title='First unlock of the day (Updated)',
-                message=f'It is the first time you unlock your computer today, so I started Toggl for you 😉',
+                message=f'It is the first time you unlock your computer today, so I started Toggl for you',
                 timeout_sec=_TIMEOUT_INFO_MSG_SEC,
             )
 
@@ -196,7 +193,7 @@ def unlock() -> None:
                 _if_yes_then_start_toggl(0, 3)
                 notifications.send_notification(
                     title='Not logging time (Updated)',
-                    message=f'You are not currently logging time, so I started Toggl for you 😉',
+                    message=f'You are not currently logging time, so I started Toggl for you',
                     timeout_sec=_TIMEOUT_INFO_MSG_SEC,
                 )
 
@@ -315,29 +312,23 @@ def check_for_lunch_break_when_unlocking() -> None:
                 if only_handle_stop_time_for_toggl_entries:
                     _lunch_break.toggl_entry.stop = _lunch_break.start
                     _lunch_break.toggl_entry.save()
-                    print("{} [=] Logic - Updated stopped time entry ({}), at {}".format(
-                        pendulum.now().to_datetime_string(),
-                        _lunch_break.toggl_entry.id,
-                        _lunch_break.toggl_entry.start.to_datetime_string(),
-                    ))
+                    logger.info("Updated stopped time entry (%s), at %s",
+                                _lunch_break.toggl_entry.id,
+                                _lunch_break.toggl_entry.start.to_datetime_string())
 
                 else:
                     time_entry_stop = _toggl_handler.stop_current_entry(_lunch_break.start)
-                    print("{} [=] Logic - Stopped time entry ({}), at {}".format(
-                        pendulum.now().to_datetime_string(),
-                        time_entry_stop.id,
-                        time_entry_stop.start.to_datetime_string(),
-                    ))
+                    logger.info("Stopped time entry (%s), at %s",
+                                time_entry_stop.id,
+                                time_entry_stop.start.to_datetime_string())
 
                     time_entry_start = _toggl_handler.start_entry(
                         description="Working",
                         start_time=_lunch_break.end,
                     )
-                    print("{} [=] Logic - Started time entry ({}), at {}".format(
-                        pendulum.now().to_datetime_string(),
-                        time_entry_start.id,
-                        time_entry_start.start.to_datetime_string(),
-                    ))
+                    logger.info("Started time entry (%s), at %s",
+                                time_entry_start.id,
+                                time_entry_start.start.to_datetime_string())
 
         if tmp_lunch_breaks.__len__() == 1 and AutoAnswer.lunch_break in _AUTO_ANSWER:
             lunch_breaks[-1] = tmp_lunch_breaks[0]
@@ -363,7 +354,7 @@ def check_for_lunch_break_when_unlocking() -> None:
 
             notifications.send_notification(
                 title='Lunch break (Updated)',
-                message="You have had lunch break which you did not register, but I have done it for you 😉 "
+                message="You have had lunch break which you did not register, but I have done it for you. "
                         "The lunch break was {} min, start at {}".format(
                             tmp_lunch_breaks[0].period.in_minutes(),
                             tmp_lunch_breaks[0].start.format('HH:mm'),

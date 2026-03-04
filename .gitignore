@@ -1,4 +1,42 @@
+# Python
 venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDEs
 .idea
 .vscode
-__pycache__
+*.swp
+*.swo
+*~
+
+# Nix
+result
+result-*
+.direnv/
+.envrc
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,3 +1,4 @@
+import logging
 import threading
 from time import sleep
 
@@ -5,9 +6,10 @@ import unittest
 from typing import Callable, Dict, Set, Optional, Union
 
 import dbus
-import pendulum
 from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
+
+logger = logging.getLogger(__name__)
 
 _LOCK_SCREEN_NOTIFIER = None
 
@@ -113,15 +115,10 @@ class _Notifications:
         }
         notify_timeout = timeout_sec * 1000
 
-        print(f"{pendulum.today().to_datetime_string()} [=] Notification - send_notification - "
-              f"notify_app_name: {notify_app_name} - "
-              f"notify_replace_id: {notify_replace_id} - "
-              f"notify_app_icon: {notify_app_icon} - "
-              f"notify_summary: {notify_summary} - "
-              f"notify_body: {notify_body} - "
-              f"actions: {actions} - "
-              f"notify_hints: {notify_hints} - "
-              f"notify_timeout: {notify_timeout}")
+        logger.debug("send_notification - app_name: %s, replace_id: %s, app_icon: %s, "
+                      "summary: %s, body: %s, actions: %s, hints: %s, timeout: %s",
+                      notify_app_name, notify_replace_id, notify_app_icon,
+                      notify_summary, notify_body, actions, notify_hints, notify_timeout)
 
         collect_all_msg_ids = set()
 
@@ -157,10 +154,7 @@ class _Notifications:
                         collect_all_msg_ids.add(msg_id)
                         break
                     except dbus.exceptions.DBusException as err:
-                        print("{} [=] Notification - send_notification - error msg: {}".format(
-                            pendulum.now().to_datetime_string(),
-                            err,
-                        ))
+                        logger.error("send_notification - DBus error: %s", err)
                         sleep(5)
                         self.connect()
 
@@ -176,12 +170,12 @@ class _Notifications:
 
         if action_callback_function is not None:
             if self._glib_loop.is_running() is False:
-                print("{} [=] Notification - _thread: Starter".format(pendulum.now().to_datetime_string()))
+                logger.debug("GLib main loop thread: starting")
                 self._thread.start()
-                print("{} [=] Notification - _thread: Finished".format(pendulum.now().to_datetime_string()))
+                logger.debug("GLib main loop thread: finished")
 
             else:
-                print("{} [=] Notification - _thread: Running".format(pendulum.now().to_datetime_string()))
+                logger.debug("GLib main loop thread: already running")
 
         return collect_all_msg_ids
 
@@ -191,10 +185,8 @@ class _Notifications:
             action_id = int(args[1])
 
             if msg_id in self._waiting_for_the_ip:
-                print("{} [=] signal_handler (was expected) - msg_id: {}, action_id: {}".format(
-                    pendulum.now().to_datetime_string(),
-                    msg_id, action_id,
-                ))
+                logger.debug("signal_handler (expected) - msg_id: %s, action_id: %s",
+                             msg_id, action_id)
                 callback_function = self._waiting_for_the_ip[msg_id]
                 if msg_id in self._dismissed_msg_ids:
                     self._dismissed_msg_ids.remove(msg_id)
@@ -211,15 +203,10 @@ class _Notifications:
                         break
 
             else:
-                print("{} [=] signal_handler (was not expected) - msg_id: {}, action_id: {}".format(
-                    pendulum.now().to_datetime_string(),
-                    msg_id, action_id,
-                ))
+                logger.debug("signal_handler (unexpected) - msg_id: %s, action_id: %s",
+                             msg_id, action_id)
         else:
-            print("{} [=] signal_handler (unknown) - args: {}".format(
-                pendulum.now().to_datetime_string(),
-                args,
-            ))
+            logger.warning("signal_handler (unknown) - args: %s", args)
 
     def join(self) -> None:
         self._thread.join()
@@ -236,9 +223,7 @@ class _Notifications:
             while message_ids & set(self._waiting_for_the_ip.keys()):
                 sleep(0.1)
         else:
-            print("{} [=] Notification - wait_for_message_ids - _glib_loop is not running".format(
-                pendulum.now().to_datetime_string(),
-            ))
+            logger.warning("wait_for_message_ids - GLib main loop is not running")
 
 
 def Notifications() -> _Notifications:

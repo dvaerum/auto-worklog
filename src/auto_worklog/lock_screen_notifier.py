@@ -1,12 +1,13 @@
+import logging
 import threading
 from typing import Callable, List, Union
 
 import dbus
-import pendulum
 from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
 from .misc import ScreenState
 
+logger = logging.getLogger(__name__)
 
 _LOCK_SCREEN_NOTIFIER = None
 
@@ -52,24 +53,18 @@ class _LockScreenNotifier:
 
     def signal_handler(self, screen_locked: Union[int, ScreenState]):
         screen_state = ScreenState(screen_locked)
-        print('{} [=] Lock Screen Notifier - {}'.format(pendulum.now().to_datetime_string(), screen_state.name))
+        logger.info("Lock Screen Notifier - %s", screen_state.name)
 
         if screen_state == ScreenState.UNLOCKED:
             for func_ in self._unlock_subscription:
-                print('{} [=] Lock Screen Notifier - {} - Run: {}'.format(
-                    pendulum.now().to_datetime_string(),
-                    screen_state.name,
-                    func_,
-                ))
+                logger.debug("Lock Screen Notifier - %s - Run: %s",
+                             screen_state.name, func_)
                 func_()
 
         elif screen_state == ScreenState.LOCKED:
             for func_ in self._lock_subscription:
-                print('{} [=] Lock Screen Notifier - {} - Run: {}'.format(
-                    pendulum.now().to_datetime_string(),
-                    screen_state.name,
-                    func_,
-                ))
+                logger.debug("Lock Screen Notifier - %s - Run: %s",
+                             screen_state.name, func_)
                 func_()
 
         else:
@@ -82,9 +77,9 @@ class _LockScreenNotifier:
         self._thread.join()
 
     def quit(self) -> None:
-        print("{} [=] LockScreenNotifier - Told to quit".format(pendulum.now().to_datetime_string()))
+        logger.info("LockScreenNotifier - Told to quit")
         if self._glib_loop.is_running():
-            print("{} [=] LockScreenNotifier - Quit command send".format(pendulum.now().to_datetime_string()))
+            logger.debug("LockScreenNotifier - Quit command sent")
             self._glib_loop.quit()
 
 
@@ -95,6 +90,3 @@ def LockScreenNotifier() -> _LockScreenNotifier:
         _LOCK_SCREEN_NOTIFIER = _LockScreenNotifier()
 
     return _LOCK_SCREEN_NOTIFIER
-
-
-
