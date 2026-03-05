@@ -123,18 +123,31 @@ class _Notifications:
         collect_all_msg_ids = set()
 
         if actions is None:
-            msg_id = self.dbus_interface_obj.Notify(
-                notify_app_name,
-                notify_replace_id,
-                notify_app_icon,
-                notify_summary,
-                notify_body,
-                notify_actions,
-                notify_hints,
-                notify_timeout,
-            )
-            msg_id = int(msg_id)
-            collect_all_msg_ids.add(msg_id)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    msg_id = self.dbus_interface_obj.Notify(
+                        notify_app_name,
+                        notify_replace_id,
+                        notify_app_icon,
+                        notify_summary,
+                        notify_body,
+                        notify_actions,
+                        notify_hints,
+                        notify_timeout,
+                    )
+                    msg_id = int(msg_id)
+                    collect_all_msg_ids.add(msg_id)
+                    break
+                except dbus.exceptions.DBusException as err:
+                    logger.error("send_notification - DBus error (attempt %d/%d): %s", 
+                                 attempt + 1, max_retries, err)
+                    if attempt < max_retries - 1:
+                        logger.info("send_notification - reconnecting to D-Bus notification service...")
+                        sleep(1)
+                        self.connect()
+                    else:
+                        logger.warning("send_notification - notification dropped after %d attempts", max_retries)
 
         else:
             for index, action in enumerate(actions):

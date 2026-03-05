@@ -134,17 +134,36 @@ def main():
 
     tracker = Tracker()
 
+    # Wrap trigger functions to catch and log exceptions that would otherwise crash the D-Bus handler
+    def safe_first_unlock_today():
+        try:
+            l.first_unlock_today()
+        except Exception as e:
+            logger.exception("Error in first_unlock_today trigger: %s", e)
+    
+    def safe_unlock():
+        try:
+            l.unlock()
+        except Exception as e:
+            logger.exception("Error in unlock trigger: %s", e)
+    
+    def safe_lunch_break():
+        try:
+            l.check_for_lunch_break_when_unlocking()
+        except Exception as e:
+            logger.exception("Error in lunch_break trigger: %s", e)
+
     lock_screen_notifier = LockScreenNotifier()
     lock_screen_notifier.subscribe_to_lock_notification(tracker.trigger_screen_locked)
 
     lock_screen_notifier.subscribe_to_unlock_notification(tracker.trigger_screen_unlocked)
-    lock_screen_notifier.subscribe_to_unlock_notification(l.first_unlock_today)
-    lock_screen_notifier.subscribe_to_unlock_notification(l.unlock)
-    lock_screen_notifier.subscribe_to_unlock_notification(l.check_for_lunch_break_when_unlocking)
+    lock_screen_notifier.subscribe_to_unlock_notification(safe_first_unlock_today)
+    lock_screen_notifier.subscribe_to_unlock_notification(safe_unlock)
+    lock_screen_notifier.subscribe_to_unlock_notification(safe_lunch_break)
 
-    l.first_unlock_today()
-    l.unlock()
-    l.check_for_lunch_break_when_unlocking()
+    safe_first_unlock_today()
+    safe_unlock()
+    safe_lunch_break()
 
     if RUNNER_ALLOWED:
         logger.info("Ready")
