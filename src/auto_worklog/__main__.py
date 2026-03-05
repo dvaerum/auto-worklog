@@ -69,36 +69,63 @@ def main():
 
     arg_parser = ArgumentParser()
 
-    arg_parser.add_argument('--log-level', type=str, required=False,
-                            default=environ.get("AUTO_WORKLOG_LOG_LEVEL", "INFO"),
-                            choices=LOG_LEVELS + ["OFF"],
-                            help='Console (stderr) log level; OFF disables '
-                                 '(or set AUTO_WORKLOG_LOG_LEVEL)')
+    arg_parser.add_argument(
+        "--log-level",
+        type=str,
+        required=False,
+        default=environ.get("AUTO_WORKLOG_LOG_LEVEL", "INFO"),
+        choices=LOG_LEVELS + ["OFF"],
+        help="Console (stderr) log level; OFF disables "
+        "(or set AUTO_WORKLOG_LOG_LEVEL)",
+    )
 
-    arg_parser.add_argument('--log-file', type=str, required=False,
-                            default=environ.get("AUTO_WORKLOG_LOG_FILE", None),
-                            help='Path to log file (or set AUTO_WORKLOG_LOG_FILE)')
+    arg_parser.add_argument(
+        "--log-file",
+        type=str,
+        required=False,
+        default=environ.get("AUTO_WORKLOG_LOG_FILE", None),
+        help="Path to log file (or set AUTO_WORKLOG_LOG_FILE)",
+    )
 
-    arg_parser.add_argument('--log-file-level', type=str, required=False,
-                            default=environ.get("AUTO_WORKLOG_LOG_FILE_LEVEL", "DEBUG"),
-                            choices=LOG_LEVELS,
-                            help='File log level (or set AUTO_WORKLOG_LOG_FILE_LEVEL)')
+    arg_parser.add_argument(
+        "--log-file-level",
+        type=str,
+        required=False,
+        default=environ.get("AUTO_WORKLOG_LOG_FILE_LEVEL", "DEBUG"),
+        choices=LOG_LEVELS,
+        help="File log level (or set AUTO_WORKLOG_LOG_FILE_LEVEL)",
+    )
 
     token_group = arg_parser.add_mutually_exclusive_group()
-    token_group.add_argument('--token', type=str, required=False,
-                             default=environ.get("AUTO_WORKLOG_TOGGL_TOKEN", None),
-                             help='Toggl API token (or set AUTO_WORKLOG_TOGGL_TOKEN)')
-    token_group.add_argument('--token-file', type=str, required=False,
-                             default=environ.get("AUTO_WORKLOG_TOGGL_TOKEN_FILE", None),
-                             help='Path to a file containing the Toggl API token '
-                                  '(or set AUTO_WORKLOG_TOGGL_TOKEN_FILE)')
+    token_group.add_argument(
+        "--token",
+        type=str,
+        required=False,
+        default=environ.get("AUTO_WORKLOG_TOGGL_TOKEN", None),
+        help="Toggl API token (or set AUTO_WORKLOG_TOGGL_TOKEN)",
+    )
+    token_group.add_argument(
+        "--token-file",
+        type=str,
+        required=False,
+        default=environ.get("AUTO_WORKLOG_TOGGL_TOKEN_FILE", None),
+        help="Path to a file containing the Toggl API token "
+        "(or set AUTO_WORKLOG_TOGGL_TOKEN_FILE)",
+    )
 
-    arg_parser.add_argument('--auto-answer', type=str, required=False, nargs='+',
-                            default=[
-                                answer for answer in environ.get("AUTO_WORKLOG_AUTO_ANSWER", "").split(',')
-                                if answer in l.AutoAnswer.__members__],
-                            choices=list(l.AutoAnswer.__members__.keys()),
-                            help='Auto answer to questions')
+    arg_parser.add_argument(
+        "--auto-answer",
+        type=str,
+        required=False,
+        nargs="+",
+        default=[
+            answer
+            for answer in environ.get("AUTO_WORKLOG_AUTO_ANSWER", "").split(",")
+            if answer in l.AutoAnswer.__members__
+        ],
+        choices=list(l.AutoAnswer.__members__.keys()),
+        help="Auto answer to questions",
+    )
     args = arg_parser.parse_args()
 
     setup_logging(
@@ -107,8 +134,12 @@ def main():
         file_level=args.log_file_level,
     )
 
-    logger.debug("Startup: console_level=%s, log_file=%s, file_level=%s",
-                 args.log_level, args.log_file or "disabled", args.log_file_level)
+    logger.debug(
+        "Startup: console_level=%s, log_file=%s, file_level=%s",
+        args.log_level,
+        args.log_file or "disabled",
+        args.log_file_level,
+    )
 
     if args.auto_answer:
         auto_answer = l.AutoAnswer(sum([l.AutoAnswer[x] for x in args.auto_answer]))
@@ -140,13 +171,13 @@ def main():
             l.first_unlock_today()
         except Exception as e:
             logger.exception("Error in first_unlock_today trigger: %s", e)
-    
+
     def safe_unlock():
         try:
             l.unlock()
         except Exception as e:
             logger.exception("Error in unlock trigger: %s", e)
-    
+
     def safe_lunch_break():
         try:
             l.check_for_lunch_break_when_unlocking()
@@ -156,7 +187,9 @@ def main():
     lock_screen_notifier = LockScreenNotifier()
     lock_screen_notifier.subscribe_to_lock_notification(tracker.trigger_screen_locked)
 
-    lock_screen_notifier.subscribe_to_unlock_notification(tracker.trigger_screen_unlocked)
+    lock_screen_notifier.subscribe_to_unlock_notification(
+        tracker.trigger_screen_unlocked
+    )
     lock_screen_notifier.subscribe_to_unlock_notification(safe_first_unlock_today)
     lock_screen_notifier.subscribe_to_unlock_notification(safe_unlock)
     lock_screen_notifier.subscribe_to_unlock_notification(safe_lunch_break)
