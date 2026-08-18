@@ -45,7 +45,7 @@
       }
     )
     // {
-      homeManagerModules.default = import ./homeManagerModules/default.nix;
-      homeManagerModules.auto-worklog = import ./homeManagerModules/default.nix;
+      homeModules.default = import ./homeManagerModules/default.nix;
+      homeModules.auto-worklog = import ./homeManagerModules/default.nix;
     };
 }
