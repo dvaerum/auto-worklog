@@ -6,6 +6,7 @@ from os import environ
 from pathlib import Path
 import threading
 
+from auto_worklog import __version__
 from auto_worklog.logging_config import setup_logging, LOG_LEVELS
 from auto_worklog.lock_screen_notifier import LockScreenNotifier
 from auto_worklog.notification import Notifications
@@ -79,6 +80,10 @@ def main():
     global RUNNER_ALLOWED
 
     arg_parser = ArgumentParser()
+
+    arg_parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
 
     arg_parser.add_argument(
         "--log-level",
