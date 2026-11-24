@@ -186,6 +186,10 @@ in
         ExecStart = execCommand;
         Restart = "always";
         RestartSec = cfg.restartDelay;
+        # Back off instead of restarting every restartDelay seconds forever: one
+        # failure mode ran 2,334 restarts in 14 h (needs systemd >= 254).
+        RestartSteps = 5;
+        RestartMaxDelaySec = 300;
       }
       // optionalAttrs (cfg.tokenFile != null) {
         Environment = [ "AUTO_WORKLOG_TOGGL_TOKEN_FILE=${cfg.tokenFile}" ];

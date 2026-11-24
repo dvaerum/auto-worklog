@@ -140,14 +140,16 @@ class _Notifications:
                     collect_all_msg_ids.add(msg_id)
                     break
                 except dbus.exceptions.DBusException as err:
-                    logger.error("send_notification - DBus error (attempt %d/%d): %s", 
-                                 attempt + 1, max_retries, err)
+                    # Only an ERROR once the notification is dropped: the daemon is
+                    # often not up yet right after login and the retry succeeds.
+                    logger.warning("send_notification - DBus error (attempt %d/%d): %s",
+                                   attempt + 1, max_retries, err)
                     if attempt < max_retries - 1:
                         logger.info("send_notification - reconnecting to D-Bus notification service...")
                         sleep(1)
                         self.connect()
                     else:
-                        logger.warning("send_notification - notification dropped after %d attempts", max_retries)
+                        logger.error("send_notification - notification dropped after %d attempts", max_retries)
 
         else:
             for index, action in enumerate(actions):

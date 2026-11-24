@@ -10,7 +10,7 @@ from auto_worklog.logging_config import setup_logging, LOG_LEVELS
 from auto_worklog.lock_screen_notifier import LockScreenNotifier
 from auto_worklog.notification import Notifications
 from auto_worklog.tracker import Tracker
-from auto_worklog.toggl_handler import TogglHandler
+from auto_worklog.toggl_handler import TogglHandler, TogglUnavailableError, TokenStatus
 from auto_worklog import logic as l
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,17 @@ def print_current_threads(signum, _frame):
 signal.signal(signal.SIGINT, handler)
 signal.signal(signal.SIGTERM, handler)
 signal.signal(signal.SIGUSR2, print_current_threads)
+
+
+def run_trigger(name: str, trigger) -> None:
+    """Run a trigger so that a failure is logged and never reaches the D-Bus handler."""
+    try:
+        trigger()
+    except TogglUnavailableError as err:
+        # Expected while offline (laptop on the move, DNS not up yet): no traceback.
+        logger.warning("Trigger %s skipped, Toggl is unreachable: %s", name, err)
+    except Exception as err:
+        logger.exception("Error in %s trigger: %s", name, err)
 
 
 def _resolve_token(args) -> str | None:
@@ -152,37 +163,32 @@ def main():
     if token:
         logger.debug("Startup: Toggl token provided, validating...")
         toggl = TogglHandler(token=token)
-        if toggl.validate_token():
+        status = toggl.check_token()
+        if status is TokenStatus.VALID:
             logger.info("Toggl token validated")
-        else:
-            logger.error("Toggl token is invalid or API unreachable")
+        elif status is TokenStatus.INVALID:
+            # Needs the user: the token was rejected.
+            logger.error("Toggl token was rejected (invalid or revoked)")
             Notifications().send_notification(
                 title="Auto Worklog",
-                message="Toggl token is invalid or API is unreachable. Time entries will not be synced.",
+                message="The Toggl token was rejected. Time entries will not be synced.",
             )
+        else:
+            # Transient: no network yet, or Toggl is down. Nothing to fix.
+            logger.warning("Toggl API is unreachable, time entries may not be synced")
     else:
         logger.debug("Startup: No Toggl token provided, running in offline mode")
 
     tracker = Tracker()
 
-    # Wrap trigger functions to catch and log exceptions that would otherwise crash the D-Bus handler
     def safe_first_unlock_today():
-        try:
-            l.first_unlock_today()
-        except Exception as e:
-            logger.exception("Error in first_unlock_today trigger: %s", e)
+        run_trigger("first_unlock_today", l.first_unlock_today)
 
     def safe_unlock():
-        try:
-            l.unlock()
-        except Exception as e:
-            logger.exception("Error in unlock trigger: %s", e)
+        run_trigger("unlock", l.unlock)
 
     def safe_lunch_break():
-        try:
-            l.check_for_lunch_break_when_unlocking()
-        except Exception as e:
-            logger.exception("Error in lunch_break trigger: %s", e)
+        run_trigger("lunch_break", l.check_for_lunch_break_when_unlocking)
 
     lock_screen_notifier = LockScreenNotifier()
     lock_screen_notifier.subscribe_to_lock_notification(tracker.trigger_screen_locked)

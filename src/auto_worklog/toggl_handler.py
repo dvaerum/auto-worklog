@@ -1,6 +1,8 @@
+import functools
 import logging
 import unittest
-from asyncio import sleep
+from enum import Enum
+from time import sleep
 from typing import Optional, List
 
 import pendulum
@@ -14,6 +16,36 @@ from .notification import Notifications
 logger = logging.getLogger(__name__)
 
 _TOGGL_HANDLER = None
+
+_NETWORK_ERRORS = (requests.exceptions.ConnectionError, requests.exceptions.Timeout)
+
+
+class TogglUnavailableError(Exception):
+    """Toggl could not be reached (no network, DNS failure, timeout).
+
+    Raised instead of exiting: a dead process is restarted by systemd and
+    fails the same way again, over and over, for as long as the network is down.
+    """
+
+
+class TokenStatus(Enum):
+    VALID = "valid"
+    INVALID = "invalid"  # Toggl answered 401/403: the user has to act
+    UNREACHABLE = "unreachable"  # no answer or a server error: retrying later may work
+    MISSING = "missing"
+
+
+def _unavailable_when_offline(method):
+    """Turn network failures of a Toggl API call into TogglUnavailableError."""
+
+    @functools.wraps(method)
+    def wrapper(*args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        except _NETWORK_ERRORS as err:
+            raise TogglUnavailableError(f"{method.__name__}: {err}") from err
+
+    return wrapper
 
 
 class _TogglHandler:
@@ -37,11 +69,11 @@ class _TogglHandler:
         self._current_entry = None
         self._entries = []
 
-    def validate_token(self) -> bool:
-        """Validate the Toggl API token by making a lightweight API call."""
+    def check_token(self) -> TokenStatus:
+        """Check the Toggl API token with a lightweight API call."""
         token = self.get_token()
         if token is None:
-            return False
+            return TokenStatus.MISSING
 
         try:
             response = requests.get(
@@ -49,9 +81,18 @@ class _TogglHandler:
                 auth=(token, "api_token"),
                 timeout=10,
             )
-            return response.status_code == 200
-        except requests.exceptions.RequestException:
-            return False
+        except requests.exceptions.RequestException as err:
+            logger.debug("check_token: %s", err)
+            return TokenStatus.UNREACHABLE
+
+        if response.status_code == 200:
+            return TokenStatus.VALID
+        if response.status_code in (401, 403):
+            return TokenStatus.INVALID
+        return TokenStatus.UNREACHABLE
+
+    def validate_token(self) -> bool:
+        return self.check_token() is TokenStatus.VALID
 
     def set_token(self, token: str) -> None:
         self._config.api_token = token
@@ -59,6 +100,7 @@ class _TogglHandler:
     def get_token(self) -> str:
         return self._config.api_token
 
+    @_unavailable_when_offline
     def get_current_entry(self) -> Optional[api.TimeEntry]:
         if self.get_token() is None:
             logger.debug("get_current_entry: offline mode, returning cached entry")
@@ -73,6 +115,7 @@ class _TogglHandler:
 
         return self._current_entry
 
+    @_unavailable_when_offline
     def _get_entries_started(self, date: pendulum.DateTime) -> List[api.TimeEntry]:
         _date = date.replace(hour=0, minute=0, second=0, microsecond=0)
         if self.get_token() is None:
@@ -82,10 +125,7 @@ class _TogglHandler:
             ]
             return entries
 
-        try:
-            self._entries = api.TimeEntry.objects.filter(start=_date, stop=_date.now())
-        except requests.exceptions.ConnectionError as err:
-            exit(1)
+        self._entries = api.TimeEntry.objects.filter(start=_date, stop=_date.now())
 
         return self._entries
 
@@ -97,6 +137,7 @@ class _TogglHandler:
     def get_entries_started_today_count(self) -> int:
         return len(self.get_entries_started_today())
 
+    @_unavailable_when_offline
     def _get_entries_stopped(self, date: pendulum.datetime) -> List[api.TimeEntry]:
         _date: pendulum.DateTime = date.replace(hour=23, minute=59, second=59, microsecond=999999)
         if self.get_token() is None:
@@ -129,6 +170,7 @@ class _TogglHandler:
         self._offline_id -= 1
         return self._offline_id
 
+    @_unavailable_when_offline
     def start_entry(self, description: str, start_time: pendulum.duration = None) -> api.TimeEntry:
         current_entry = None
 
@@ -174,6 +216,7 @@ class _TogglHandler:
 
         return current_entry
 
+    @_unavailable_when_offline
     def stop_current_entry(self, stop_time: pendulum.datetime) -> api.TimeEntry:
         if stop_time is None:
             stop_time = pendulum.now()

@@ -39,11 +39,20 @@ auto-worklog [OPTIONS]
 | `--token` | `AUTO_WORKLOG_TOGGL_TOKEN` | | Toggl API token |
 | `--token-file` | `AUTO_WORKLOG_TOGGL_TOKEN_FILE` | | Path to file containing the token |
 | `--auto-answer` | `AUTO_WORKLOG_AUTO_ANSWER` | | Auto-answer modes (comma-separated) |
-| `--log-level` | `AUTO_WORKLOG_LOG_LEVEL` | `INFO` | Console (stderr) level; `OFF` to disable |
+| `--log-level` | `AUTO_WORKLOG_LOG_LEVEL` | `INFO` | Console level (journald under systemd, else stderr); `OFF` to disable |
 | `--log-file` | `AUTO_WORKLOG_LOG_FILE` | | Path to log file (always with timestamps) |
 | `--log-file-level` | `AUTO_WORKLOG_LOG_FILE_LEVEL` | `DEBUG` | File log level |
 
 `--token` and `--token-file` are mutually exclusive. CLI args take precedence over env vars.
+
+### Logging
+
+Under systemd, records go to journald's native socket: each record is one journal entry (a
+traceback is not split into lines) and `PRIORITY` follows the Python level, so `level:error`
+queries work. `urllib3` and `toggl` are held at `WARNING` even with `--log-level DEBUG`.
+
+If Toggl is unreachable the triggers are skipped with a warning and the service keeps running;
+a rejected token (401/403) is an error and shows a notification.
 
 ## Home Manager
 
