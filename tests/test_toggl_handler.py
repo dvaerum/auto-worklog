@@ -101,3 +101,54 @@ def test_retry_sleep_really_sleeps():
     import inspect
 
     assert not inspect.iscoroutinefunction(toggl_handler.sleep)
+
+
+# -- entries for the day summary -------------------------------------------------------------
+class _Obj:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def test_work_entries_are_plain_values_with_project_name_tags_and_description(monkeypatch):
+    import pendulum
+    from auto_worklog.worklog import WorkEntry
+
+    start = pendulum.datetime(2026, 11, 25, 8, 0, tz="Europe/Copenhagen")
+    fakes = [
+        _Obj(start=start, stop=start.add(hours=2), description="planning", project=_Obj(name="Alpha"), tags={"b", "a"}),
+        _Obj(start=start.add(hours=3), stop=None, description=None, project=None, tags=None),
+    ]
+    seen = {}
+
+    def fake_filter(**conditions):
+        seen.update(conditions)
+        return fakes
+
+    monkeypatch.setattr(api.TimeEntry.objects, "filter", fake_filter)
+
+    entries = TogglHandler(token="t").get_work_entries(pendulum.date(2026, 11, 25))
+
+    assert entries == [
+        WorkEntry(start=start, stop=start.add(hours=2), description="planning", project="Alpha", tags=("a", "b")),
+        WorkEntry(start=start.add(hours=3), stop=None, description="", project=None, tags=()),
+    ]
+    # the window starts a day early so an entry that began the evening before is seen too
+    assert seen["start"] == pendulum.datetime(2026, 11, 24, tz=start.timezone)
+    assert seen["stop"] == pendulum.datetime(2026, 11, 26, tz=start.timezone)
+
+
+def test_work_entries_in_offline_mode_are_none_not_an_empty_day():
+    import pendulum
+
+    assert TogglHandler().get_work_entries(pendulum.date(2026, 11, 25)) is None
+
+
+def test_work_entries_while_unreachable_raise_unavailable(monkeypatch):
+    import pendulum
+
+    def boom(**_):
+        raise requests.exceptions.ConnectionError("no dns")
+
+    monkeypatch.setattr(api.TimeEntry.objects, "filter", boom)
+    with pytest.raises(TogglUnavailableError):
+        TogglHandler(token="t").get_work_entries(pendulum.date(2026, 11, 25))

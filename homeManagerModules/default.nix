@@ -35,7 +35,34 @@ let
       cfg.logFile != null
     ) " --log-file ${cfg.logFile} --log-file-level ${cfg.logFileLevel}";
 
-  execCommand = "${cfg.package}/bin/auto-worklog ${autoAnswerArgs} ${logArgs}";
+  # Hooks and the project mapping travel as one JSON file; the service only gets --config
+  # when something is actually configured.
+  hookEvents = filterAttrs (_: commands: commands != [ ]) cfg.hooks;
+
+  configFile = pkgs.writeText "auto-worklog-config.json" (
+    builtins.toJSON {
+      hooks = hookEvents;
+      hook_timeout = cfg.hookTimeout;
+      summary = {
+        rules = map (
+          rule:
+          filterAttrs (_: value: value != null) {
+            inherit (rule) project description tag;
+            toggl_project = rule.togglProject;
+          }
+        ) cfg.summary.rules;
+        comments = cfg.summary.comments;
+        ignore_descriptions = cfg.summary.ignoreDescriptions;
+      }
+      // optionalAttrs (cfg.summary.defaultProject != null) {
+        default_project = cfg.summary.defaultProject;
+      };
+    }
+  );
+
+  hookArgs = optionalString (hookEvents != { }) " --config ${configFile}";
+
+  execCommand = "${cfg.package}/bin/auto-worklog ${autoAnswerArgs} ${logArgs}${hookArgs}";
 
 in
 {
@@ -113,6 +140,115 @@ in
         cannot both provide a token — the application enforces that --token
         and --token-file are mutually exclusive.
       '';
+    };
+
+    hooks = mkOption {
+      type = types.submodule {
+        options = genAttrs [ "screen_locked" "screen_unlocked" "day_summary" ] (
+          event:
+          mkOption {
+            type = types.listOf (types.listOf types.str);
+            default = [ ];
+            description = "Commands to run on the ${event} event, each an argument list (no shell).";
+          }
+        );
+      };
+      default = { };
+      example = literalExpression ''
+        {
+          # register each day's time in BIT; the cookie comes from the service environment
+          day_summary = [ [ "''${pkgs.bit-client}/bin/bit" "sync" ] ];
+        }
+      '';
+      description = ''
+        Commands run when something happens, so other tools can react without auto-worklog
+        knowing them. Each command is an argument list started without a shell; the event is
+        piped to it as JSON on stdin (and named in AUTO_WORKLOG_EVENT). Commands run one after
+        another in the background, a failing or hanging one is logged and skipped, and their
+        output goes to the journal. They inherit the service environment, so secrets such as a
+        cookie file can come from `environmentFile`.
+
+        Events:
+          screen_locked, screen_unlocked - {"state", "at"}
+          day_summary - {"days": [{"date", "complete", "entries": [{"project", "minutes",
+            "comment"}], "unmapped": [...]}]}: the day's Toggl entries mapped to projects and
+            merged into one total per project (see `summary`). Sent after every screen lock
+            (for today and the last working day) and on the first unlock of the day, so a
+            consumer must be idempotent; `bit sync` is.
+      '';
+    };
+
+    hookTimeout = mkOption {
+      type = types.ints.positive;
+      default = 60;
+      description = "Seconds a hook command may run before it is killed.";
+    };
+
+    summary = {
+      rules = mkOption {
+        type = types.listOf (
+          types.submodule {
+            options = {
+              project = mkOption {
+                type = types.str;
+                description = "The project label sent to hooks for entries this rule matches.";
+              };
+              togglProject = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                description = "Match entries on this Toggl project (ignoring case).";
+              };
+              description = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                description = "Match entries whose description matches this regular expression.";
+              };
+              tag = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                description = "Match entries carrying this Toggl tag (ignoring case).";
+              };
+            };
+          }
+        );
+        default = [ ];
+        example = literalExpression ''
+          [
+            { togglProject = "Alpha"; project = "10"; }
+            { description = "^support"; project = "30"; }
+          ]
+        '';
+        description = ''
+          How Toggl entries map to project labels for the day_summary event. The first rule
+          whose conditions all hold wins. Entries of the same label are merged into one total
+          for the day: a whole day on one project is one entry, task switching gives one entry
+          per project.
+        '';
+      };
+
+      defaultProject = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          The label for entries no rule matches. Without it such entries are listed under
+          `unmapped` in the event and not counted.
+        '';
+      };
+
+      comments = mkOption {
+        type = types.enum [
+          "descriptions"
+          "none"
+        ];
+        default = "descriptions";
+        description = "Whether a merged entry's comment lists the distinct descriptions.";
+      };
+
+      ignoreDescriptions = mkOption {
+        type = types.listOf types.str;
+        default = [ "Working" ];
+        description = "Descriptions left out of comments; Working is what auto-worklog itself creates.";
+      };
     };
 
     logLevel = mkOption {

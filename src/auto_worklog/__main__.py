@@ -1,3 +1,4 @@
+import json
 import logging
 import signal
 import sys
@@ -6,8 +7,13 @@ from os import environ
 from pathlib import Path
 import threading
 
+import pendulum
+
 from auto_worklog import __version__
+from auto_worklog.config import AppConfig, ConfigError, load_config
+from auto_worklog.integrations import TrackerAdapter, build_integrations, parse_day
 from auto_worklog.logging_config import setup_logging, LOG_LEVELS
+from auto_worklog.worklog import MappingConfig, summarize_day
 from auto_worklog.lock_screen_notifier import LockScreenNotifier
 from auto_worklog.notification import Notifications
 from auto_worklog.tracker import Tracker
@@ -76,6 +82,27 @@ def _resolve_token(args) -> str | None:
     return None
 
 
+def _print_day_summary(day_text: str, token: str | None, config: AppConfig | None) -> int:
+    """``--print-day-summary``: the document a ``day_summary`` hook would receive."""
+    if not token:
+        logger.error("--print-day-summary needs a Toggl token (--token or --token-file)")
+        return 2
+    try:
+        day = parse_day(day_text, pendulum.today().date())
+    except ValueError as err:
+        logger.error("%s", err)
+        return 2
+    try:
+        entries = TogglHandler(token=token).get_work_entries(day)
+    except TogglUnavailableError as err:
+        logger.error("Toggl is unreachable: %s", err)
+        return 1
+    mapping = config.mapping if config else MappingConfig()
+    summary = summarize_day(day, entries or [], mapping, pendulum.now())
+    print(json.dumps({"days": [summary.to_dict()]}, indent=2))
+    return 0
+
+
 def main():
     global RUNNER_ALLOWED
 
@@ -142,6 +169,20 @@ def main():
         choices=list(l.AutoAnswer.__members__.keys()),
         help="Auto answer to questions",
     )
+    arg_parser.add_argument(
+        "--config",
+        type=str,
+        required=False,
+        default=environ.get("AUTO_WORKLOG_CONFIG", None),
+        help="JSON file with hooks and the project mapping (or set AUTO_WORKLOG_CONFIG)",
+    )
+    arg_parser.add_argument(
+        "--print-day-summary",
+        metavar="DAY",
+        required=False,
+        help="print the day_summary JSON for DAY (today, yesterday or YYYY-MM-DD) and exit; "
+        "pipe it into a consumer to try the mapping, e.g. `... | bit sync --dry-run`",
+    )
     args = arg_parser.parse_args()
 
     setup_logging(
@@ -164,7 +205,18 @@ def main():
     else:
         logger.info("Auto answer: %s", l.AutoAnswer.disabled)
 
+    config: AppConfig | None = None
+    if args.config:
+        try:
+            config = load_config(args.config)
+        except ConfigError as err:
+            logger.error("%s", err)
+            sys.exit(2)
+
     token = _resolve_token(args)
+    if args.print_day_summary:
+        sys.exit(_print_day_summary(args.print_day_summary, token, config))
+
     if token:
         logger.debug("Startup: Toggl token provided, validating...")
         toggl = TogglHandler(token=token)
@@ -205,6 +257,19 @@ def main():
     lock_screen_notifier.subscribe_to_unlock_notification(safe_unlock)
     lock_screen_notifier.subscribe_to_unlock_notification(safe_lunch_break)
 
+    # Registered last so the tracker has recorded the event, and the Toggl triggers above have
+    # had their say (they may fix a forgotten timer), before anything is sent to hooks.
+    integrations = None
+    if config is not None and any(config.hooks.commands.values()):
+        integrations = build_integrations(config, tracker=TrackerAdapter(Tracker), toggl_factory=TogglHandler)
+        lock_screen_notifier.subscribe_to_lock_notification(
+            lambda: run_trigger("hooks", integrations.on_screen_locked)
+        )
+        lock_screen_notifier.subscribe_to_unlock_notification(
+            lambda: run_trigger("hooks", integrations.on_screen_unlocked)
+        )
+        logger.info("Hooks enabled for: %s", ", ".join(sorted(e for e, c in config.hooks.commands.items() if c)))
+
     safe_first_unlock_today()
     safe_unlock()
     safe_lunch_break()
@@ -215,6 +280,8 @@ def main():
         Notifications().join()
 
     tracker.save()
+    if integrations is not None:
+        integrations.close()  # let queued hooks finish (bounded) before the process ends
 
 
 if __name__ == "__main__":

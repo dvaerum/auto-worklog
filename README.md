@@ -67,6 +67,15 @@ services.auto-worklog = {
 };
 ```
 
+## Hooks
+
+Auto-worklog can run commands on events (`screen_locked`, `screen_unlocked`, `day_summary`),
+piping each event to them as JSON, so other tools can react without any code for each other. The
+`day_summary` event maps the day's Toggl entries to projects and merges them into one total per
+project; `bit sync` (from the separate bit-client tool) reads exactly that
+document and registers it in BIT, so a hook of `["bit", "sync"]` is all the integration there is.
+See [docs/hooks.md](docs/hooks.md) for the config, the event formats and the rules.
+
 ## License
 
 MIT

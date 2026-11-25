@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "auto-worklog"
-version = "0.2.0"
+version = "0.3.0"
 description = "Automatic work time tracking with screen lock detection"
 readme = "README.md"
 requires-python = ">=3.8"

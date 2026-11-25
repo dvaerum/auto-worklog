@@ -12,6 +12,7 @@ import requests
 from toggl import api, utils, exceptions
 
 from .notification import Notifications
+from .worklog import WorkEntry
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,26 @@ class _TogglHandler:
         self._entries = api.TimeEntry.objects.filter(start=_date, stop=_date.now())
 
         return self._entries
+
+    @_unavailable_when_offline
+    def get_work_entries(self, day) -> Optional[List[WorkEntry]]:
+        """The time entries that overlap ``day`` as plain values, or None in offline mode
+        (no token: there is nothing to ask, which is not the same as an empty day)."""
+        if self.get_token() is None:
+            return None
+        day_start = pendulum.datetime(day.year, day.month, day.day, tz=pendulum.now().timezone)
+        # start a day early: an entry that began the evening before may run into this day
+        found = api.TimeEntry.objects.filter(start=day_start.subtract(days=1), stop=day_start.add(days=1))
+        return [
+            WorkEntry(
+                start=entry.start,
+                stop=entry.stop,
+                description=entry.description or "",
+                project=entry.project.name if entry.project else None,
+                tags=tuple(sorted(entry.tags or ())),
+            )
+            for entry in found
+        ]
 
     def get_entries_started_today(self) -> List[api.TimeEntry]:
         today = pendulum.now()
