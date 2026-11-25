@@ -170,3 +170,83 @@ def test_a_hooks_output_is_logged_so_it_ends_up_in_the_journal(tmp_path, caplog)
         hooks.emit("screen_locked", {})
         assert hooks.flush(5)
     assert any("1 changed, 0 unchanged" in r.getMessage() for r in caplog.records)
+
+
+# -- the event as command arguments ---------------------------------------------------------------
+def arg_writer(path, *template):
+    """A command that stores its own arguments (after the output path) as a JSON list."""
+    code = "import json,sys; open(sys.argv[1],'w').write(json.dumps(sys.argv[2:]))"
+    return [sys.executable, "-c", code, str(path), *template]
+
+
+def stored_args(path):
+    return json.loads(path.read_text())
+
+
+def test_json_placeholder_passes_the_whole_event_as_one_argument(tmp_path):
+    out = tmp_path / "args"
+    hooks = runner({"day_summary": [arg_writer(out, "sync", "--data", "{{json}}")]})
+
+    hooks.emit("day_summary", {"days": [{"date": "2026-11-25", "entries": []}]})
+    assert hooks.flush(5)
+
+    sync, flag, payload = stored_args(out)
+    assert (sync, flag) == ("sync", "--data")
+    event = json.loads(payload)
+    assert event["event"] == "day_summary" and event["host"] == "test-host" and event["version"] == 1
+    assert event["days"] == [{"date": "2026-11-25", "entries": []}]
+
+
+def test_simple_placeholders_fill_in_event_host_and_the_days_date(tmp_path):
+    out = tmp_path / "args"
+    hooks = runner({"day_summary": [arg_writer(out, "{{event}}@{{host}}", "day={{date}}")]})
+    hooks.emit("day_summary", {"days": [{"date": "2026-11-25", "entries": []}]})
+    assert hooks.flush(5)
+    assert stored_args(out) == ["day_summary@test-host", "day=2026-11-25"]
+
+
+def test_screen_events_have_state_and_at_placeholders(tmp_path):
+    out = tmp_path / "args"
+    hooks = runner({"screen_locked": [arg_writer(out, "{{state}}", "{{ at }}")]})
+    hooks.emit("screen_locked", {"state": "locked", "at": "2026-11-25T16:00:00+01:00"})
+    assert hooks.flush(5)
+    assert stored_args(out) == ["locked", "2026-11-25T16:00:00+01:00"]
+
+
+def test_single_braces_are_literal_so_json_shell_and_jq_text_needs_no_escaping(tmp_path):
+    out = tmp_path / "args"
+    hooks = runner({"screen_locked": [arg_writer(out, '{"a": {"b": 1}}', "${HOME}/x", ".[] | {name}")]})
+    hooks.emit("screen_locked", {"state": "locked", "at": "x"})
+    assert hooks.flush(5)
+    assert stored_args(out) == ['{"a": {"b": 1}}', "${HOME}/x", ".[] | {name}"]
+
+
+def test_stdin_still_carries_the_event_when_arguments_are_used(tmp_path):
+    out = tmp_path / "out"
+    hooks = runner({"screen_locked": [writer(out), arg_writer(tmp_path / "args", "{{json}}")]})
+    hooks.emit("screen_locked", {"state": "locked", "at": "x"})
+    assert hooks.flush(5)
+    assert runs(out)[0]["stdin"]["state"] == "locked"
+
+
+def test_a_date_placeholder_needs_exactly_one_day_otherwise_the_hook_is_skipped(tmp_path, caplog):
+    out = tmp_path / "args"
+    hooks = runner({"day_summary": [arg_writer(out, "{{date}}")]})
+    with caplog.at_level(logging.WARNING):
+        hooks.emit("day_summary", {"days": [{"date": "2026-11-24", "entries": []}, {"date": "2026-11-25", "entries": []}]})
+        assert hooks.flush(5)
+    assert not out.exists()
+    assert any("{{date}}" in r.getMessage() and "one day" in r.getMessage() for r in caplog.records)
+
+
+def test_placeholders_are_checked_per_event():
+    from auto_worklog.hooks import ARGUMENT_PLACEHOLDERS, check_placeholders
+
+    assert {"event", "host", "time", "json"} <= ARGUMENT_PLACEHOLDERS["screen_locked"]
+    assert "date" in ARGUMENT_PLACEHOLDERS["day_summary"] and "date" not in ARGUMENT_PLACEHOLDERS["screen_locked"]
+    check_placeholders("day_summary", ["bit", "sync", "--data", "{{json}}", "--x={{date}}", "{literal}", "${HOME}", '{"a": 1}'])
+    # an unterminated "{{" is not a placeholder, so it stays literal text
+    check_placeholders("day_summary", ["x", "a{{json"])
+    for bad in (["x", "{{nope}}"], ["x", "{{state}}"], ["x", "{{json.keys}}"], ["x", "{{ }}"], ["x", "{{0}}"]):
+        with pytest.raises(ValueError):
+            check_placeholders("day_summary", bad)

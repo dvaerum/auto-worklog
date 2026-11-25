@@ -157,13 +157,15 @@ in
       example = literalExpression ''
         {
           # register each day's time in BIT; the cookie comes from the service environment
-          day_summary = [ [ "''${pkgs.bit-client}/bin/bit" "sync" ] ];
+          day_summary = [ [ "''${pkgs.bit-client}/bin/bit" "sync" "--data" "{{json}}" ] ];
         }
       '';
       description = ''
         Commands run when something happens, so other tools can react without auto-worklog
-        knowing them. Each command is an argument list started without a shell; the event is
-        piped to it as JSON on stdin (and named in AUTO_WORKLOG_EVENT). Commands run one after
+        knowing them. Each command is an argument list started without a shell. Placeholders in the
+        arguments are filled in from the event ({{json}} is the whole event as one JSON argument;
+        also {{event}}, {{host}}, {{time}}, {{state}}, {{at}} and, for day_summary, {{date}});
+        the event is also on stdin as JSON and named in AUTO_WORKLOG_EVENT. Commands run one after
         another in the background, a failing or hanging one is logged and skipped, and their
         output goes to the journal. They inherit the service environment, so secrets such as a
         cookie file can come from `environmentFile`.

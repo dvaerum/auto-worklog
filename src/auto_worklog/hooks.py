@@ -10,11 +10,17 @@ thread, a hook that fails or hangs is logged and skipped, and a burst of events 
 key (for instance the same day's summary requested on every screen lock) collapses into the
 latest one.
 
-The document on stdin::
+The event reaches a command in three ways, so it can use whichever suits it:
+
+* **arguments**: placeholders in the configured argument list are filled in, e.g.
+  ``["bit", "sync", "--data", "{{json}}"]`` (see :data:`ARGUMENT_PLACEHOLDERS`; single braces
+  are literal, so JSON, shell ``${VAR}`` and jq programs need no escaping);
+* **stdin**: the same document as JSON;
+* **environment**: ``AUTO_WORKLOG_EVENT`` and ``AUTO_WORKLOG_HOST``.
+
+The document::
 
     {"version": 1, "event": "day_summary", "time": "<ISO 8601>", "host": "<hostname>", ...data}
-
-and the environment carries ``AUTO_WORKLOG_EVENT`` and ``AUTO_WORKLOG_HOST``.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ import itertools
 import json
 import logging
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -35,6 +42,62 @@ logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
 EVENTS = ("screen_locked", "screen_unlocked", "day_summary")
+
+_COMMON_PLACEHOLDERS = frozenset({"event", "host", "time", "json"})
+
+# What a hook command's arguments may contain, as ``{name}``: ``json`` is the whole event as one
+# JSON argument; ``state``/``at`` come with the screen events, ``date`` with a one-day summary.
+ARGUMENT_PLACEHOLDERS: dict[str, frozenset[str]] = {
+    "screen_locked": _COMMON_PLACEHOLDERS | {"state", "at"},
+    "screen_unlocked": _COMMON_PLACEHOLDERS | {"state", "at"},
+    "day_summary": _COMMON_PLACEHOLDERS | {"date"},
+}
+
+# ``{{name}}``: mustache style, so single braces in JSON, shell or jq text stay literal.
+_PLACEHOLDER = re.compile(r"\{\{(.*?)\}\}")
+_PLAIN_NAME = re.compile(r"^[a-z_]+$")
+
+
+def check_placeholders(event: str, argv: list[str]) -> None:
+    """Raise ``ValueError`` if an argument uses a placeholder the event does not offer."""
+    allowed = ARGUMENT_PLACEHOLDERS[event]
+    for arg in argv:
+        for match in _PLACEHOLDER.finditer(arg):
+            name = match.group(1).strip()
+            if not _PLAIN_NAME.match(name):
+                raise ValueError(f"{arg!r}: the placeholder {match.group(0)} must hold a plain name")
+            if name not in allowed:
+                raise ValueError(
+                    f"{arg!r}: unknown placeholder {match.group(0)} for {event}; the placeholders are "
+                    + ", ".join(sorted(allowed))
+                )
+
+
+def render_argv(argv: list[str], envelope: dict[str, Any]) -> list[str]:
+    """Fill in the placeholders of ``argv`` from the event ``envelope``."""
+    values: dict[str, str] = {
+        "event": str(envelope["event"]),
+        "host": str(envelope["host"]),
+        "time": str(envelope["time"]),
+        "json": json.dumps(envelope),
+    }
+    for name in ("state", "at"):
+        if name in envelope:
+            values[name] = str(envelope[name])
+    days = envelope.get("days")
+    if isinstance(days, list) and len(days) == 1 and isinstance(days[0], dict) and "date" in days[0]:
+        values["date"] = str(days[0]["date"])
+
+    def fill(match: re.Match) -> str:
+        name = match.group(1).strip()
+        if name not in values:
+            if name == "date":
+                raise ValueError("{{date}} needs exactly one day in the event")
+            raise ValueError(f"the event has no value for {match.group(0)}")
+        return values[name]
+
+    return [_PLACEHOLDER.sub(fill, arg) for arg in argv]
+
 
 # Event data, or a function producing it. The function runs on the worker thread, so it may
 # do slow work (a network call) without holding up the caller; returning None skips the event.
@@ -136,7 +199,12 @@ class HookRunner:
         body = json.dumps(envelope)
         env = {**os.environ, "AUTO_WORKLOG_EVENT": event, "AUTO_WORKLOG_HOST": self._host}
         for argv in self._config.commands.get(event, []):
-            self._run_command(event, argv, body, env)
+            try:
+                rendered = render_argv(argv, envelope)
+            except ValueError as err:
+                logger.warning("hook command %s for %s skipped: %s", argv[0], event, err)
+                continue
+            self._run_command(event, rendered, body, env)
 
     def _run_command(self, event: str, argv: list[str], body: str, env: dict[str, str]) -> None:
         name = argv[0]

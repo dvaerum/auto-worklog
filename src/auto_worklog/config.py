@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from auto_worklog.hooks import EVENTS, HookConfig
+from auto_worklog.hooks import EVENTS, HookConfig, check_placeholders
 from auto_worklog.worklog import DEFAULT_IGNORED_DESCRIPTIONS, MappingConfig, Rule
 
 
@@ -58,6 +58,10 @@ def _hooks(data: Any) -> dict[str, list[list[str]]]:
             argv = _strings(argv, f"each command in hooks.{event} (an argument list, not a shell string) must be a list of strings")
             if not argv:
                 raise ConfigError(f"hooks.{event} has an empty command")
+            try:
+                check_placeholders(event, argv)
+            except ValueError as err:
+                raise ConfigError(f"hooks.{event}: {err}") from err
             commands.setdefault(event, []).append(argv)
     return commands
 

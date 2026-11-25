@@ -1,12 +1,14 @@
 # Hooks: telling other tools what happened
 
 Auto-worklog can run commands when things happen, so other tools can react without
-auto-worklog (or the tool) having any code for the other. A hook is an argument list (no
-shell); the event is piped to it as JSON on stdin and its output goes to the journal.
+auto-worklog (or the tool) having any code for the other. A hook is a command with arguments
+(an argument list, no shell); placeholders in the arguments are filled in from the event, and its
+output goes to the journal.
 
 ```nix
 services.auto-worklog = {
-  hooks.day_summary = [ [ "${pkgs.bit-client}/bin/bit" "sync" ] ];   # register the day in BIT
+  # register each day's time in BIT: the command is `bit sync --data '<the event as JSON>'`
+  hooks.day_summary = [ [ "${pkgs.bit-client}/bin/bit" "sync" "--data" "{{json}}" ] ];
   summary.rules = [
     { togglProject = "Alpha"; project = "10"; }
     { description = "^support"; project = "30"; }
@@ -20,7 +22,7 @@ services.auto-worklog = {
 Without Nix, pass `--config file.json` (or `AUTO_WORKLOG_CONFIG`):
 
 ```json
-{"hooks": {"day_summary": [["bit", "sync"]]},
+{"hooks": {"day_summary": [["bit", "sync", "--data", "{{json}}"]]},
  "hook_timeout": 60,
  "summary": {"rules": [{"toggl_project": "Alpha", "project": "10"}],
              "default_project": null, "comments": "descriptions",
@@ -29,14 +31,30 @@ Without Nix, pass `--config file.json` (or `AUTO_WORKLOG_CONFIG`):
 
 A typo in an event name or a key fails at startup with a message listing what is valid.
 
-## Events
+## Events and how a command receives them
 
-Every event is one JSON document on stdin, with `AUTO_WORKLOG_EVENT` and `AUTO_WORKLOG_HOST`
-in the environment:
+Every event is one JSON document:
 
 ```json
 {"version": 1, "event": "day_summary", "time": "2026-11-25T16:02:11+01:00", "host": "laptop", ...}
 ```
+
+A command can take it in whichever way suits it:
+
+* **as arguments**, with `{{name}}` placeholders in the configured argument list:
+
+  | placeholder | value | events |
+  |---|---|---|
+  | `{{json}}` | the whole event as one JSON argument | all |
+  | `{{event}}`, `{{host}}`, `{{time}}` | the envelope fields | all |
+  | `{{state}}`, `{{at}}` | `locked`/`unlocked` and when | `screen_locked`, `screen_unlocked` |
+  | `{{date}}` | the day (`YYYY-MM-DD`) of a one-day summary | `day_summary` |
+
+  Single braces are literal, so JSON, shell `${VAR}` and jq programs in arguments need no escaping.
+  A placeholder that the event does not offer is rejected at startup; `{{date}}` on a summary of
+  several days skips that run with a warning.
+* **on stdin**, as the same JSON document;
+* **in the environment**: `AUTO_WORKLOG_EVENT` and `AUTO_WORKLOG_HOST`.
 
 | event | extra fields | sent |
 |---|---|---|
@@ -54,7 +72,7 @@ in the environment:
 ```
 
 This is the neutral format `bit sync` reads (`days[].entries[]` with `project`, `minutes`,
-`comment`); extra fields such as `complete` and `unmapped` are ignored by it, so the two
+`comment`; `bit sync --data '<json>'` takes it as an argument); extra fields such as `complete` and `unmapped` are ignored by it, so the two
 programs fit together with no glue.
 
 **Mapping and merging.** Each Toggl entry is mapped to a project *label* by the first rule
@@ -90,9 +108,10 @@ entry. The next lock after it has been stopped sends the right totals.
 ## Trying it
 
 `auto-worklog --token-file … --config config.json --print-day-summary yesterday` prints the
-`day_summary` document for a day (`today`, `yesterday` or `YYYY-MM-DD`) and exits, so the
-mapping can be checked and the consumer previewed:
+`day_summary` document for a day (`today`, `yesterday` or `YYYY-MM-DD`) and exits, so the mapping can
+be checked, and the consumer previewed with the same arguments a hook would use:
 
 ```console
-$ auto-worklog --token-file ~/toggl --config config.json --print-day-summary yesterday | bit sync --dry-run
+$ auto-worklog --token-file ~/toggl --config config.json --print-day-summary yesterday
+$ bit sync --dry-run --data "$(auto-worklog --token-file ~/toggl --config config.json --print-day-summary yesterday)"
 ```

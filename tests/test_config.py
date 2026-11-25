@@ -39,6 +39,11 @@ def test_a_full_config_is_understood():
     assert config.mapping.ignore_descriptions == ("Working", "misc")
 
 
+def test_placeholders_in_hook_arguments_are_accepted():
+    config = parse_config({"hooks": {"day_summary": [["bit", "sync", "--data", "{{json}}"]]}})
+    assert config.hooks.commands["day_summary"] == [["bit", "sync", "--data", "{{json}}"]]
+
+
 def test_an_empty_config_means_no_hooks_and_default_mapping():
     config = parse_config({})
     assert config.hooks.commands == {} and config.hooks.timeout == 60
@@ -55,6 +60,8 @@ def test_an_empty_config_means_no_hooks_and_default_mapping():
         ({"hooks": {"day_summary": ["bit sync"]}}, "list of strings"),
         ({"hooks": {"day_summary": [[]]}}, "empty"),
         ({"hooks": {"day_summary": [["bit", 3]]}}, "list of strings"),
+        ({"hooks": {"day_summary": [["bit", "sync", "--data", "{{jsn}}"]]}}, "jsn.*day_summary.*json"),
+        ({"hooks": {"screen_locked": [["x", "{{date}}"]]}}, "date.*screen_locked"),
         ({"hooks": {"day_summary": "bit sync"}}, "list"),
         ({"hook_timeout": 0}, "hook_timeout"),
         ({"hook_timeout": "soon"}, "hook_timeout"),
